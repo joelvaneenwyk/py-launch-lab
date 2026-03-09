@@ -1,21 +1,28 @@
 """
 Windows-specific process and window detection.
 
-This module is only meaningful on win32.  All public functions return safe
-defaults (None / empty list) on other platforms so the rest of the codebase
-can import it unconditionally.
+This module is imported unconditionally but is only meaningful on win32.
+All public functions return safe defaults (None / empty list) on other
+platforms so the rest of the codebase can use them without guards.
 
-TODO(M2): Implement actual Windows detection using ctypes / psutil.
+On Windows the implementation uses:
+- ``ctypes`` with ``CreateToolhelp32Snapshot`` to walk the process tree.
+- ``ctypes`` with ``user32.EnumWindows`` to detect visible top-level windows.
+- Process tree inspection to detect ``conhost.exe`` presence.
 """
 
 from __future__ import annotations
 
+import logging
 import sys
-from typing import Optional
 
 from launch_lab.models import ProcessInfo
 
 _IS_WINDOWS = sys.platform == "win32"
+_log = logging.getLogger(__name__)
+
+# Console-host process names (case-insensitive comparison)
+_CONSOLE_HOST_NAMES = frozenset({"conhost.exe", "windowsterminal.exe", "openconsole.exe"})
 
 
 def is_windows() -> bool:
@@ -23,50 +30,183 @@ def is_windows() -> bool:
     return _IS_WINDOWS
 
 
-def get_process_tree(pid: int) -> list[ProcessInfo]:
-    """
-    Return a snapshot of the process tree rooted at `pid`.
+# ---------------------------------------------------------------------------
+# Process tree
+# ---------------------------------------------------------------------------
 
-    TODO(M2): Use psutil or Windows API to walk the process tree.
+
+def get_process_tree(pid: int) -> list[ProcessInfo]:
+    """Return a snapshot of the process tree rooted at *pid*.
+
+    On Windows this uses ``CreateToolhelp32Snapshot`` via ctypes to enumerate
+    child processes.  On other platforms an empty list is returned.
     """
     if not _IS_WINDOWS:
         return []
-    # TODO(M2): Implement using psutil.Process(pid).children(recursive=True)
-    return []
+
+    try:
+        return _get_process_tree_toolhelp(pid)
+    except Exception:  # noqa: BLE001
+        _log.debug("process tree query failed for pid %d", pid, exc_info=True)
+        return []
 
 
-def detect_visible_window(pid: int) -> Optional[bool]:
-    """
-    Return True if a visible top-level window is associated with `pid`.
+def _get_process_tree_toolhelp(pid: int) -> list[ProcessInfo]:
+    """Use ``CreateToolhelp32Snapshot`` to enumerate child processes of *pid*."""
+    import ctypes
+    import ctypes.wintypes
 
-    TODO(M2): Use EnumWindows + GetWindowThreadProcessId via ctypes.
+    # Constants
+    TH32CS_SNAPPROCESS = 0x00000002
+    INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+
+    class PROCESSENTRY32(ctypes.Structure):  # noqa: N801
+        _fields_ = [
+            ("dwSize", ctypes.wintypes.DWORD),
+            ("cntUsage", ctypes.wintypes.DWORD),
+            ("th32ProcessID", ctypes.wintypes.DWORD),
+            ("th32DefaultHeapID", ctypes.POINTER(ctypes.c_ulong)),
+            ("th32ModuleID", ctypes.wintypes.DWORD),
+            ("cntThreads", ctypes.wintypes.DWORD),
+            ("th32ParentProcessID", ctypes.wintypes.DWORD),
+            ("pcPriClassBase", ctypes.c_long),
+            ("dwFlags", ctypes.wintypes.DWORD),
+            ("szExeFile", ctypes.c_char * 260),
+        ]
+
+    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+    kernel32.CreateToolhelp32Snapshot.restype = ctypes.wintypes.HANDLE
+    kernel32.CreateToolhelp32Snapshot.argtypes = [ctypes.wintypes.DWORD, ctypes.wintypes.DWORD]
+
+    snapshot = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+    if snapshot == INVALID_HANDLE_VALUE:
+        return []
+
+    try:
+        pe = PROCESSENTRY32()
+        pe.dwSize = ctypes.sizeof(PROCESSENTRY32)
+
+        infos: list[ProcessInfo] = []
+
+        if not kernel32.Process32First(snapshot, ctypes.byref(pe)):
+            return []
+
+        while True:
+            if pe.th32ParentProcessID == pid:
+                name = pe.szExeFile.decode("utf-8", errors="replace")
+                infos.append(
+                    ProcessInfo(
+                        pid=pe.th32ProcessID,
+                        name=name,
+                        exe=None,
+                        cmdline=None,
+                    )
+                )
+            if not kernel32.Process32Next(snapshot, ctypes.byref(pe)):
+                break
+
+        return infos
+    finally:
+        kernel32.CloseHandle(snapshot)
+
+
+# ---------------------------------------------------------------------------
+# Visible-window detection
+# ---------------------------------------------------------------------------
+
+
+def detect_visible_window(pid: int) -> bool | None:
+    """Return True if a visible top-level window is associated with *pid*.
+
+    Uses ``EnumWindows`` + ``GetWindowThreadProcessId`` via ctypes on Windows.
+    Returns None on non-Windows platforms.
     """
     if not _IS_WINDOWS:
         return None
-    # TODO(M2): Implement using ctypes.windll.user32.EnumWindows
-    return None
+
+    try:
+        return _enum_windows_for_pid(pid)
+    except Exception:  # noqa: BLE001
+        _log.debug("EnumWindows failed for pid %d", pid, exc_info=True)
+        return None
 
 
-def detect_console_host(pid: int) -> Optional[bool]:
-    """
-    Return True if a console host (conhost.exe / Windows Terminal) is
-    present in the process tree for `pid`.
+def _enum_windows_for_pid(pid: int) -> bool:
+    """Walk all top-level windows and check if any belong to *pid*."""
+    import ctypes
+    import ctypes.wintypes
 
-    TODO(M2): Walk process tree and check for known console host names.
+    user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+
+    # Callback type: BOOL CALLBACK EnumWindowsProc(HWND, LPARAM)
+    WNDENUMPROC = ctypes.WINFUNCTYPE(  # noqa: N806
+        ctypes.wintypes.BOOL,
+        ctypes.wintypes.HWND,
+        ctypes.wintypes.LPARAM,
+    )
+
+    found = [False]
+
+    def _callback(hwnd: int, _lparam: int) -> bool:
+        window_pid = ctypes.wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(window_pid))
+        if window_pid.value == pid and user32.IsWindowVisible(hwnd):
+            found[0] = True
+            return False  # stop enumeration
+        return True  # continue
+
+    user32.EnumWindows.argtypes = [WNDENUMPROC, ctypes.wintypes.LPARAM]
+    user32.EnumWindows.restype = ctypes.wintypes.BOOL
+
+    ret = user32.EnumWindows(WNDENUMPROC(_callback), 0)
+
+    # EnumWindows returns 0 both on early callback termination and on real
+    # errors.  If we found a window the early exit is expected; otherwise
+    # check GetLastError to distinguish a genuine failure.
+    if ret == 0 and not found[0]:
+        err = ctypes.get_last_error()
+        if err != 0:
+            _log.debug("EnumWindows returned error code %d for pid %d", err, pid)
+
+    return found[0]
+
+
+# ---------------------------------------------------------------------------
+# Console-host detection
+# ---------------------------------------------------------------------------
+
+
+def detect_console_host(pid: int) -> bool | None:
+    """Return True if a console host is present in the process tree for *pid*.
+
+    Looks for ``conhost.exe``, ``WindowsTerminal.exe``, or ``OpenConsole.exe``
+    among the child processes.  Returns None on non-Windows platforms.
     """
     if not _IS_WINDOWS:
         return None
-    # TODO(M2): Check for 'conhost.exe' or 'WindowsTerminal.exe' in tree
-    return None
+
+    try:
+        children = get_process_tree(pid)
+        return any(c.name.lower() in _CONSOLE_HOST_NAMES for c in children)
+    except Exception:  # noqa: BLE001
+        _log.debug("console host detection failed for pid %d", pid, exc_info=True)
+        return None
 
 
-def get_creation_flags(pid: int) -> Optional[int]:
-    """
-    Return the PROCESS_CREATION_FLAGS used when `pid` was created.
+# ---------------------------------------------------------------------------
+# Creation flags (best-effort; not always available)
+# ---------------------------------------------------------------------------
 
-    TODO(M2): Use NtQueryInformationProcess or a similar mechanism.
+
+def get_creation_flags(pid: int) -> int | None:
+    """Return the ``PROCESS_CREATION_FLAGS`` used when *pid* was created.
+
+    This is only available via ``NtQueryInformationProcess`` and is best-effort.
+    Returns None when it cannot be determined or on non-Windows.
     """
     if not _IS_WINDOWS:
         return None
-    # TODO(M2): Implement via ctypes or a helper DLL
+    # Creation flags are not easily retrievable after process creation.
+    # Returning None is the correct safe default; callers should infer
+    # console behaviour from PE subsystem + observed console host presence.
     return None

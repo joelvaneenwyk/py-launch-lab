@@ -1,6 +1,6 @@
 # Milestone M4 — Rust Shim Integration
 
-> Issue: TBD
+> Issue: #7 (<https://github.com/joelvaneenwyk/py-launch-lab/issues/7>)
 
 ## Description
 

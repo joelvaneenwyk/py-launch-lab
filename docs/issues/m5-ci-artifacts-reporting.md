@@ -1,6 +1,6 @@
 # Milestone M5 — CI Artifacts and Reporting
 
-> Issue: TBD
+> Issue: #8 (<https://github.com/joelvaneenwyk/py-launch-lab/issues/8>)
 
 ## Description
 

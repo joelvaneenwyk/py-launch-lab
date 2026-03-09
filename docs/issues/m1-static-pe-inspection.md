@@ -1,6 +1,6 @@
 # Milestone M1 — Static PE Inspection
 
-> Issue: TBD
+> Issue: #4 (<https://github.com/joelvaneenwyk/py-launch-lab/issues/4>)
 
 ## Description
 
