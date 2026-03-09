@@ -81,7 +81,7 @@ def _get_process_tree_wmic(pid: int) -> list[ProcessInfo]:
         name = parts[-2] if len(parts) >= 2 else ""
         exe = parts[-3] if len(parts) >= 3 else None
         cmdline_raw = parts[1] if len(parts) >= 4 else None
-        cmdline = cmdline_raw.split() if cmdline_raw else None
+        cmdline = [cmdline_raw] if cmdline_raw else None
         if not name:
             continue
         infos.append(

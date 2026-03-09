@@ -77,7 +77,8 @@ class TestRunScenario:
         assert result.exit_code is None
         assert result.stdout_available is False
         assert result.stderr_text is not None
-        assert "not found" in result.stderr_text.lower()
+        # runner.py sets this message format for FileNotFoundError
+        assert "Executable not found" in result.stderr_text
 
     def test_result_has_all_fields(self):
         """The result should contain all ScenarioResult fields."""

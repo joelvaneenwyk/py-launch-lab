@@ -88,7 +88,7 @@ def matrix_cmd(
 
         matrix = get_matrix()
         console.print(f"Running {len(matrix)} scenarios …")
-        passed = 0
+        executed = 0
         skipped = 0
         for scenario in matrix:
             if scenario.windows_only and _sys.platform != "win32":
@@ -103,8 +103,8 @@ def matrix_cmd(
             result = run_scenario(scenario, save_artifact=True, artifact_dir=Path(output))
             status = "[green]OK[/green]" if result.exit_code == 0 else "[red]FAIL[/red]"
             console.print(f"{status} (exit={result.exit_code})")
-            passed += 1
-        console.print(f"\nDone: {passed} run, {skipped} skipped.")
+            executed += 1
+        console.print(f"\nDone: {executed} run, {skipped} skipped.")
     else:
         console.print(f"[red]Unknown action:[/red] {action}")
         raise typer.Exit(1)

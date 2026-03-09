@@ -84,8 +84,8 @@ def run_scenario(
     exit_code: int | None = None
     stdout_text: str | None = None
     stderr_text: str | None = None
-    stdout_available: bool | None = False
-    stderr_available: bool | None = False
+    stdout_available: bool | None = None
+    stderr_available: bool | None = None
     visible_window: bool | None = None
     console_window: bool | None = None
     creation_flags: int | None = None
