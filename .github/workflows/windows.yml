@@ -1,0 +1,71 @@
+name: Windows CI
+
+on:
+  push:
+    branches: [main, "copilot/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  python-tests:
+    name: Python tests (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Run unit tests
+        run: uv run pytest tests/ -v --ignore=tests/integration
+
+      - name: Run integration tests
+        run: uv run pytest tests/integration -v
+        continue-on-error: true
+
+  rust-shim:
+    name: Rust shim (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Build pyshim-win
+        working-directory: crates/pyshim-win
+        run: cargo build
+
+      - name: Run Rust tests
+        working-directory: crates/pyshim-win
+        run: cargo test
+
+  python-tests-ubuntu:
+    name: Python tests (Ubuntu — import/schema only)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Run unit tests
+        run: uv run pytest tests/ -v --ignore=tests/integration

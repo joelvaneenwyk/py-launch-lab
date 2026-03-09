@@ -1,0 +1,18 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "lab-dual"
+version = "0.1.0"
+description = "Dual console+GUI entrypoint fixture for py-launch-lab"
+requires-python = ">=3.11"
+
+[project.scripts]
+lab-dual-console = "lab_dual.main:run_console"
+
+[project.gui-scripts]
+lab-dual-gui = "lab_dual.main:run_gui"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lab_dual"]

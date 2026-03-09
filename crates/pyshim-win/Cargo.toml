@@ -1,0 +1,26 @@
+[package]
+name = "pyshim-win"
+version = "0.1.0"
+edition = "2021"
+description = "Windows GUI-subsystem shim for py-launch-lab"
+license = "MIT"
+authors = ["py-launch-lab contributors"]
+
+# Build as a GUI-subsystem executable on Windows so it never opens its own
+# console window.  The subsystem linker flag is applied in build.rs.
+[[bin]]
+name = "pyshim-win"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(windows)'.dependencies]
+# Windows-specific crates for process creation will go here.
+# TODO(M4): Add windows-sys or windows crate for CreateProcess.
+
+[profile.release]
+opt-level = "s"
+strip = true
