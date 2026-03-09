@@ -4,11 +4,14 @@ CLI entrypoint for py-launch-lab.
 Commands:
     py-launch-lab scenario run <scenario-id>
     py-launch-lab matrix run
+    py-launch-lab matrix list
     py-launch-lab report build
     py-launch-lab inspect exe <path>
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 import typer
 from rich.console import Console
@@ -43,16 +46,33 @@ def main(
 @scenario_app.command("run")
 def scenario_run(
     scenario_id: str = typer.Argument(..., help="Scenario ID to run (e.g. 'python-script-py')."),
+    output: str = typer.Option("artifacts/json", "--output", "-o", help="Artifact output dir."),
 ) -> None:
-    """Run a single scenario by ID."""
-    # TODO(M2): Implement scenario execution
-    console.print(f"[yellow]TODO:[/yellow] Run scenario '{scenario_id}'")
-    raise typer.Exit(1)
+    """Run a single scenario by ID and save the evidence artifact."""
+    from launch_lab.matrix import get_scenario
+    from launch_lab.runner import run_scenario
+
+    scenario = get_scenario(scenario_id)
+    if scenario is None:
+        console.print(f"[red]Unknown scenario:[/red] {scenario_id}")
+        raise typer.Exit(1)
+
+    console.print(f"Running scenario [bold]{scenario_id}[/bold] …")
+    result = run_scenario(scenario, save_artifact=True, artifact_dir=Path(output))
+    console.print(f"  exit_code          = {result.exit_code}")
+    console.print(f"  pe_subsystem       = {result.pe_subsystem}")
+    console.print(f"  stdout_available   = {result.stdout_available}")
+    console.print(f"  stderr_available   = {result.stderr_available}")
+    console.print(f"  console_window     = {result.console_window_detected}")
+    console.print(f"  visible_window     = {result.visible_window_detected}")
+    console.print(f"  processes          = {len(result.processes)}")
+    console.print(f"[green]Artifact saved → {output}/{scenario_id}.json[/green]")
 
 
 @app.command("matrix")
 def matrix_cmd(
     action: str = typer.Argument("run", help="Action: 'run' or 'list'."),
+    output: str = typer.Option("artifacts/json", "--output", "-o", help="Artifact output dir."),
 ) -> None:
     """Run or list the full scenario matrix."""
     if action == "list":
@@ -61,9 +81,30 @@ def matrix_cmd(
         for scenario in get_matrix():
             console.print(f"  {scenario.scenario_id}")
     elif action == "run":
-        # TODO(M2): Wire up runner
-        console.print("[yellow]TODO:[/yellow] Matrix run not yet implemented.")
-        raise typer.Exit(1)
+        import sys as _sys
+
+        from launch_lab.matrix import get_matrix
+        from launch_lab.runner import run_scenario
+
+        matrix = get_matrix()
+        console.print(f"Running {len(matrix)} scenarios …")
+        passed = 0
+        skipped = 0
+        for scenario in matrix:
+            if scenario.windows_only and _sys.platform != "win32":
+                console.print(f"  [dim]SKIP[/dim] {scenario.scenario_id} (Windows-only)")
+                skipped += 1
+                continue
+            if scenario.skip_reason:
+                console.print(f"  [dim]SKIP[/dim] {scenario.scenario_id} ({scenario.skip_reason})")
+                skipped += 1
+                continue
+            console.print(f"  RUN  {scenario.scenario_id} … ", end="")
+            result = run_scenario(scenario, save_artifact=True, artifact_dir=Path(output))
+            status = "[green]OK[/green]" if result.exit_code == 0 else "[red]FAIL[/red]"
+            console.print(f"{status} (exit={result.exit_code})")
+            passed += 1
+        console.print(f"\nDone: {passed} run, {skipped} skipped.")
     else:
         console.print(f"[red]Unknown action:[/red] {action}")
         raise typer.Exit(1)
