@@ -19,6 +19,7 @@ pub struct LaunchResult {
 /// errors are silently ignored so the shim never panics on output failure.
 pub fn emit(result: &LaunchResult) {
     if let Ok(json) = serde_json::to_string_pretty(result) {
-        let _ = println!("{}", json);
+        use std::io::Write;
+        let _ = writeln!(std::io::stdout(), "{}", json);
     }
 }

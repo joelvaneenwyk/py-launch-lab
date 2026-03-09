@@ -55,12 +55,11 @@ fn launch_impl(exe: &str, args: &[&str], hide_console: bool) -> (Option<i32>, Op
 
     use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE, WAIT_FAILED};
     use windows_sys::Win32::System::Console::{
-        GetStdHandle, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE,
+        GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
     };
     use windows_sys::Win32::System::Threading::{
-        CreateProcessW, GetExitCodeProcess, WaitForSingleObject,
-        PROCESS_INFORMATION, STARTUPINFOW,
-        CREATE_NO_WINDOW, INFINITE, STARTF_USESTDHANDLES,
+        CreateProcessW, GetExitCodeProcess, WaitForSingleObject, CREATE_NO_WINDOW, INFINITE,
+        PROCESS_INFORMATION, STARTF_USESTDHANDLES, STARTUPINFOW,
     };
 
     // Build the command line as a single wide string (Windows convention).
@@ -86,14 +85,14 @@ fn launch_impl(exe: &str, args: &[&str], hide_console: bool) -> (Option<i32>, Op
 
     // Wire standard handles into the child so it can read/write the
     // parent's console streams (matching the non-Windows Command fallback).
-    if h_stdin != INVALID_HANDLE_VALUE as isize
-        && h_stdout != INVALID_HANDLE_VALUE as isize
-        && h_stderr != INVALID_HANDLE_VALUE as isize
+    if h_stdin != INVALID_HANDLE_VALUE
+        && h_stdout != INVALID_HANDLE_VALUE
+        && h_stderr != INVALID_HANDLE_VALUE
     {
         si.dwFlags |= STARTF_USESTDHANDLES;
-        si.hStdInput = h_stdin as _;
-        si.hStdOutput = h_stdout as _;
-        si.hStdError = h_stderr as _;
+        si.hStdInput = h_stdin;
+        si.hStdOutput = h_stdout;
+        si.hStdError = h_stderr;
     }
 
     let mut pi: PROCESS_INFORMATION = unsafe { std::mem::zeroed() };
@@ -126,7 +125,10 @@ fn launch_impl(exe: &str, args: &[&str], hide_console: bool) -> (Option<i32>, Op
             CloseHandle(pi.hThread);
             CloseHandle(pi.hProcess);
         }
-        return (Some(1), Some(format!("WaitForSingleObject failed: {}", err)));
+        return (
+            Some(1),
+            Some(format!("WaitForSingleObject failed: {}", err)),
+        );
     }
 
     let mut exit_code: u32 = 1;
@@ -159,11 +161,7 @@ fn quote_arg(arg: &str) -> String {
         return "\"\"".to_string();
     }
     // If no special characters, return as-is.
-    if !arg.contains(' ')
-        && !arg.contains('\t')
-        && !arg.contains('"')
-        && !arg.contains('\\')
-    {
+    if !arg.contains(' ') && !arg.contains('\t') && !arg.contains('"') && !arg.contains('\\') {
         return arg.to_string();
     }
 

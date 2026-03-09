@@ -10,11 +10,8 @@ use std::path::PathBuf;
 ///
 /// When `--hide-console` is active the shim will try the GUI variant first.
 /// `uvw` is a project-specific GUI-subsystem build of `uv` (see M3 scenarios).
-const GUI_ALTERNATIVES: &[(&str, &str)] = &[
-    ("python", "pythonw"),
-    ("python3", "pythonw"),
-    ("uv", "uvw"),
-];
+const GUI_ALTERNATIVES: &[(&str, &str)] =
+    &[("python", "pythonw"), ("python3", "pythonw"), ("uv", "uvw")];
 
 /// Resolve the first element of `command` to an absolute executable path.
 ///
@@ -99,7 +96,7 @@ fn is_executable_file(path: &std::path::Path) -> bool {
         if let Ok(meta) = path.metadata() {
             return meta.permissions().mode() & 0o111 != 0;
         }
-        return false;
+        false
     }
     #[cfg(not(unix))]
     {

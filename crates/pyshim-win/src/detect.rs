@@ -105,13 +105,18 @@ mod tests {
         // DOS header: MZ signature
         buf[0] = 0x4D; // 'M'
         buf[1] = 0x5A; // 'Z'
+
         // PE offset at 0x3C → point to offset 0x80
         let pe_offset: u32 = 0x80;
         buf[0x3C..0x40].copy_from_slice(&pe_offset.to_le_bytes());
         // PE signature at offset 0x80
         buf[0x80..0x84].copy_from_slice(&IMAGE_NT_SIGNATURE.to_le_bytes());
         // Optional header magic at offset 0x80 + 4 + 20 = 0x98
-        let magic = if pe32_plus { PE32_PLUS_MAGIC } else { PE32_MAGIC };
+        let magic = if pe32_plus {
+            PE32_PLUS_MAGIC
+        } else {
+            PE32_MAGIC
+        };
         buf[0x98..0x9A].copy_from_slice(&magic.to_le_bytes());
         // Subsystem at optional header start + 68 = 0x98 + 68 = 0xDC
         let sub_offset = 0x98 + 68;
