@@ -1,0 +1,74 @@
+# https://taskfile.dev
+version: "3"
+
+vars:
+  PYTHON: uv run python
+  PKG: launch_lab
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  install:
+    desc: Install the project in development mode
+    cmds:
+      - uv sync --extra dev
+
+  lint:
+    desc: Run ruff linter
+    cmds:
+      - uv run ruff check src tests
+
+  format:
+    desc: Run ruff formatter
+    cmds:
+      - uv run ruff format src tests
+
+  typecheck:
+    desc: Run mypy type checker
+    cmds:
+      - uv run mypy src
+
+  test:
+    desc: Run unit tests
+    cmds:
+      - uv run pytest tests/ -v --ignore=tests/integration
+
+  test-integration:
+    desc: Run integration tests (Windows only)
+    platforms: [windows]
+    cmds:
+      - uv run pytest tests/integration -v
+
+  test-all:
+    desc: Run all tests
+    cmds:
+      - uv run pytest tests/ -v
+
+  run:
+    desc: Run the CLI
+    cmds:
+      - uv run py-launch-lab {{.CLI_ARGS}}
+
+  matrix-run:
+    desc: Run the full scenario matrix
+    cmds:
+      - uv run py-launch-lab matrix run
+
+  report:
+    desc: Build the report
+    cmds:
+      - uv run py-launch-lab report build
+
+  shim-build:
+    desc: Build the Rust shim (Windows only)
+    dir: crates/pyshim-win
+    cmds:
+      - cargo build --release
+
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - powershell -File tools/clean.ps1

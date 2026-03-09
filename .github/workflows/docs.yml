@@ -1,0 +1,27 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "README.md"
+      - "plan.md"
+
+jobs:
+  validate:
+    name: Validate docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Markdown files exist
+        run: |
+          test -f README.md
+          test -f plan.md
+          test -f docs/overview.md
+          test -f docs/windows-launch-semantics.md
+          test -f docs/scenario-matrix.md
+          echo "All docs present."
+
+  # TODO(M5): Add mkdocs or mdBook deployment to GitHub Pages

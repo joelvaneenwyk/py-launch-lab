@@ -1,0 +1,18 @@
+# Normalize line endings to LF in the repository
+* text=auto eol=lf
+
+# Windows scripts keep CRLF for compatibility with cmd.exe
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Rust source
+*.rs text eol=lf
+*.toml text eol=lf
+
+# Mark binary files
+*.exe binary
+*.pyd binary
+*.dll binary
+*.png binary
+*.jpg binary

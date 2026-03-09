@@ -1,0 +1,15 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "lab-console"
+version = "0.1.0"
+description = "Console entrypoint fixture for py-launch-lab"
+requires-python = ">=3.11"
+
+[project.scripts]
+lab-console = "lab_console.main:run"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lab_console"]
