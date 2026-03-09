@@ -53,11 +53,14 @@ fn launch_impl(exe: &str, args: &[&str], hide_console: bool) -> (Option<i32>, Op
     use std::iter::once;
     use std::os::windows::ffi::OsStrExt;
 
-    use windows_sys::Win32::Foundation::{CloseHandle, WAIT_FAILED};
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE, WAIT_FAILED};
+    use windows_sys::Win32::System::Console::{
+        GetStdHandle, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE,
+    };
     use windows_sys::Win32::System::Threading::{
-        CreateProcessW, WaitForSingleObject, GetExitCodeProcess,
+        CreateProcessW, GetExitCodeProcess, WaitForSingleObject,
         PROCESS_INFORMATION, STARTUPINFOW,
-        CREATE_NO_WINDOW, INFINITE,
+        CREATE_NO_WINDOW, INFINITE, STARTF_USESTDHANDLES,
     };
 
     // Build the command line as a single wide string (Windows convention).
@@ -73,8 +76,26 @@ fn launch_impl(exe: &str, args: &[&str], hide_console: bool) -> (Option<i32>, Op
 
     let creation_flags: u32 = if hide_console { CREATE_NO_WINDOW } else { 0 };
 
+    // Retrieve the parent's standard handles so the child can inherit them.
+    let h_stdin = unsafe { GetStdHandle(STD_INPUT_HANDLE) };
+    let h_stdout = unsafe { GetStdHandle(STD_OUTPUT_HANDLE) };
+    let h_stderr = unsafe { GetStdHandle(STD_ERROR_HANDLE) };
+
     let mut si: STARTUPINFOW = unsafe { std::mem::zeroed() };
     si.cb = std::mem::size_of::<STARTUPINFOW>() as u32;
+
+    // Wire standard handles into the child so it can read/write the
+    // parent's console streams (matching the non-Windows Command fallback).
+    if h_stdin != INVALID_HANDLE_VALUE as isize
+        && h_stdout != INVALID_HANDLE_VALUE as isize
+        && h_stderr != INVALID_HANDLE_VALUE as isize
+    {
+        si.dwFlags |= STARTF_USESTDHANDLES;
+        si.hStdInput = h_stdin as _;
+        si.hStdOutput = h_stdout as _;
+        si.hStdError = h_stderr as _;
+    }
+
     let mut pi: PROCESS_INFORMATION = unsafe { std::mem::zeroed() };
 
     let ok = unsafe {
@@ -83,7 +104,7 @@ fn launch_impl(exe: &str, args: &[&str], hide_console: bool) -> (Option<i32>, Op
             cmdline_wide.as_mut_ptr(), // lpCommandLine
             std::ptr::null(),          // lpProcessAttributes
             std::ptr::null(),          // lpThreadAttributes
-            0,                         // bInheritHandles (FALSE)
+            1,                         // bInheritHandles (TRUE)
             creation_flags,            // dwCreationFlags
             std::ptr::null(),          // lpEnvironment
             std::ptr::null(),          // lpCurrentDirectory

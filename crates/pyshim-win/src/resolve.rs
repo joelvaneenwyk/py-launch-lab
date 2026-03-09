@@ -56,37 +56,55 @@ fn gui_alternative(name: &str) -> Option<String> {
     None
 }
 
-/// Simple PATH walk to locate an executable.
+/// Walk PATH to locate an executable file.
+///
+/// Uses `env::split_paths` (handles non-UTF-8 entries correctly) and
+/// validates that the candidate is a regular file.  On Unix the
+/// executable permission bit is also checked.
 fn which(name: &str) -> Option<PathBuf> {
-    // If the name is already an absolute path and exists, return it.
+    // If the name is already an absolute path and is an executable file, return it.
     let p = PathBuf::from(name);
-    if p.is_absolute() && p.exists() {
+    if p.is_absolute() && is_executable_file(&p) {
         return Some(p);
     }
 
     let path_val = env::var_os("PATH")?;
-    let path_str = path_val.to_str()?;
 
-    #[cfg(target_os = "windows")]
-    let separator = ';';
-    #[cfg(not(target_os = "windows"))]
-    let separator = ':';
-
-    for dir in path_str.split(separator).filter(|s| !s.is_empty()) {
-        let candidate = PathBuf::from(dir).join(name);
-        if candidate.exists() {
+    for dir in env::split_paths(&path_val) {
+        let candidate = dir.join(name);
+        if is_executable_file(&candidate) {
             return Some(candidate);
         }
         // Try with .exe on Windows.
         #[cfg(target_os = "windows")]
         {
-            let with_ext = PathBuf::from(dir).join(format!("{}.exe", name));
-            if with_ext.exists() {
+            let with_ext = dir.join(format!("{}.exe", name));
+            if is_executable_file(&with_ext) {
                 return Some(with_ext);
             }
         }
     }
     None
+}
+
+/// Check that `path` is a regular file (not a directory or symlink to a
+/// directory) and, on Unix, has the executable permission bit set.
+fn is_executable_file(path: &std::path::Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = path.metadata() {
+            return meta.permissions().mode() & 0o111 != 0;
+        }
+        return false;
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
 }
 
 #[cfg(test)]

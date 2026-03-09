@@ -21,20 +21,35 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 CRATE_DIR = REPO_ROOT / "crates" / "pyshim-win"
 
 
+def _shim_binary_name() -> str:
+    """Return the platform-specific binary name."""
+    return "pyshim-win.exe" if sys.platform == "win32" else "pyshim-win"
 
-def _shim_binary() -> Path | None:
-    """Return the path to the built shim binary, or None if not built."""
-    if sys.platform == "win32":
-        name = "pyshim-win.exe"
-    else:
-        name = "pyshim-win"
-    debug = CRATE_DIR / "target" / "debug" / name
+
+@pytest.fixture(scope="session")
+def shim_binary() -> Path:
+    """Build the crate once per session and return the binary path.
+
+    This guarantees the binary exists before any CLI or Windows test
+    runs, regardless of pytest execution order.
+    """
+    result = subprocess.run(
+        ["cargo", "build"],
+        cwd=CRATE_DIR,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert result.returncode == 0, (
+        f"cargo build failed:\nstdout={result.stdout}\nstderr={result.stderr}"
+    )
+    name = _shim_binary_name()
+    # Prefer release build if available, otherwise debug.
     release = CRATE_DIR / "target" / "release" / name
-    if release.exists():
-        return release
-    if debug.exists():
-        return debug
-    return None
+    debug = CRATE_DIR / "target" / "debug" / name
+    binary = release if release.exists() else debug
+    assert binary.exists(), f"Binary not found after cargo build: {binary}"
+    return binary
 
 
 # ---------------------------------------------------------------------------
@@ -45,18 +60,9 @@ def _shim_binary() -> Path | None:
 class TestShimBuild:
     """Verify the Rust shim compiles correctly."""
 
-    def test_cargo_build(self):
-        """The crate should compile without errors."""
-        result = subprocess.run(
-            ["cargo", "build"],
-            cwd=CRATE_DIR,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        assert result.returncode == 0, (
-            f"cargo build failed:\nstdout={result.stdout}\nstderr={result.stderr}"
-        )
+    def test_cargo_build(self, shim_binary: Path):
+        """The crate should compile without errors (verified by fixture)."""
+        assert shim_binary.exists()
 
     def test_cargo_test(self):
         """The crate's own unit tests should pass."""
@@ -81,12 +87,9 @@ class TestShimCLI:
     """Verify CLI behaviour and JSON output structure."""
 
     @pytest.fixture(autouse=True)
-    def require_binary(self):
-        """Skip if the shim binary is not available."""
-        binary = _shim_binary()
-        if binary is None:
-            pytest.skip("pyshim-win binary not built")
-        self.binary = binary
+    def _set_binary(self, shim_binary: Path):
+        """Inject the session-scoped binary path into each test instance."""
+        self.binary = shim_binary
 
     def _run_shim(self, *args: str, timeout: int = 30) -> subprocess.CompletedProcess[str]:
         """Run the shim binary and return the result."""
@@ -221,13 +224,10 @@ class TestShimWindows:
     """Tests that exercise Windows-specific shim behaviour."""
 
     @pytest.fixture(autouse=True)
-    def require_windows(self):
+    def _require_windows(self, shim_binary: Path):
         if sys.platform != "win32":
             pytest.skip("pyshim-win Windows tests require Windows")
-        binary = _shim_binary()
-        if binary is None:
-            pytest.skip("pyshim-win binary not built")
-        self.binary = binary
+        self.binary = shim_binary
 
     def _run_shim(self, *args: str, timeout: int = 30) -> subprocess.CompletedProcess[str]:
         return subprocess.run(

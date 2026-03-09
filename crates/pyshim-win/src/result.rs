@@ -15,11 +15,10 @@ pub struct LaunchResult {
 
 /// Emit the result as JSON to stdout.
 ///
-/// If stdout is unavailable (GUI subsystem without an attached console),
-/// the result is written to a temp file instead.
+/// In GUI-subsystem mode stdout may not be attached to a console; write
+/// errors are silently ignored so the shim never panics on output failure.
 pub fn emit(result: &LaunchResult) {
     if let Ok(json) = serde_json::to_string_pretty(result) {
-        // Attempt to print; ignore errors (stdout may not be available in GUI mode).
         let _ = println!("{}", json);
     }
 }
