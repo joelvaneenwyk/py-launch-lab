@@ -1,12 +1,12 @@
 """
 Windows-specific process and window detection.
 
-This module is only meaningful on win32.  All public functions return safe
-defaults (None / empty list) on other platforms so the rest of the codebase
-can import it unconditionally.
+This module is imported unconditionally but is only meaningful on win32.
+All public functions return safe defaults (None / empty list) on other
+platforms so the rest of the codebase can use them without guards.
 
 On Windows the implementation uses:
-- ``subprocess`` with ``wmic`` / ``tasklist`` to walk the process tree.
+- ``ctypes`` with ``CreateToolhelp32Snapshot`` to walk the process tree.
 - ``ctypes`` with ``user32.EnumWindows`` to detect visible top-level windows.
 - Process tree inspection to detect ``conhost.exe`` presence.
 """
@@ -14,10 +14,9 @@ On Windows the implementation uses:
 from __future__ import annotations
 
 import logging
-import subprocess
 import sys
 
-from launch_lab.models import ProcessInfo, Subsystem
+from launch_lab.models import ProcessInfo
 
 _IS_WINDOWS = sys.platform == "win32"
 _log = logging.getLogger(__name__)
@@ -39,60 +38,76 @@ def is_windows() -> bool:
 def get_process_tree(pid: int) -> list[ProcessInfo]:
     """Return a snapshot of the process tree rooted at *pid*.
 
-    On Windows this queries ``wmic`` / ``tasklist`` for child processes.
-    On other platforms an empty list is returned.
+    On Windows this uses ``CreateToolhelp32Snapshot`` via ctypes to enumerate
+    child processes.  On other platforms an empty list is returned.
     """
     if not _IS_WINDOWS:
         return []
 
     try:
-        return _get_process_tree_wmic(pid)
+        return _get_process_tree_toolhelp(pid)
     except Exception:  # noqa: BLE001
-        _log.debug("wmic process tree query failed for pid %d", pid, exc_info=True)
+        _log.debug("process tree query failed for pid %d", pid, exc_info=True)
         return []
 
 
-def _get_process_tree_wmic(pid: int) -> list[ProcessInfo]:
-    """Use ``wmic`` to enumerate child processes of *pid*."""
-    result = subprocess.run(
-        [
-            "wmic",
-            "process",
-            "where",
-            f"(ParentProcessId={pid})",
-            "get",
-            "ProcessId,Name,ExecutablePath,CommandLine",
-            "/format:csv",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    infos: list[ProcessInfo] = []
-    for line in result.stdout.splitlines():
-        parts = line.strip().split(",")
-        # CSV columns: Node, CommandLine, ExecutablePath, Name, ProcessId
-        if len(parts) < 5:
-            continue
-        try:
-            child_pid = int(parts[-1])
-        except (ValueError, IndexError):
-            continue
-        name = parts[-2] if len(parts) >= 2 else ""
-        exe = parts[-3] if len(parts) >= 3 else None
-        cmdline_raw = parts[1] if len(parts) >= 4 else None
-        cmdline = [cmdline_raw] if cmdline_raw else None
-        if not name:
-            continue
-        infos.append(
-            ProcessInfo(
-                pid=child_pid,
-                name=name,
-                exe=exe or None,
-                cmdline=cmdline,
-            )
-        )
-    return infos
+def _get_process_tree_toolhelp(pid: int) -> list[ProcessInfo]:
+    """Use ``CreateToolhelp32Snapshot`` to enumerate child processes of *pid*."""
+    import ctypes
+    import ctypes.wintypes
+
+    # Constants
+    TH32CS_SNAPPROCESS = 0x00000002
+    INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+
+    class PROCESSENTRY32(ctypes.Structure):  # noqa: N801
+        _fields_ = [
+            ("dwSize", ctypes.wintypes.DWORD),
+            ("cntUsage", ctypes.wintypes.DWORD),
+            ("th32ProcessID", ctypes.wintypes.DWORD),
+            ("th32DefaultHeapID", ctypes.POINTER(ctypes.c_ulong)),
+            ("th32ModuleID", ctypes.wintypes.DWORD),
+            ("cntThreads", ctypes.wintypes.DWORD),
+            ("th32ParentProcessID", ctypes.wintypes.DWORD),
+            ("pcPriClassBase", ctypes.c_long),
+            ("dwFlags", ctypes.wintypes.DWORD),
+            ("szExeFile", ctypes.c_char * 260),
+        ]
+
+    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+    kernel32.CreateToolhelp32Snapshot.restype = ctypes.wintypes.HANDLE
+    kernel32.CreateToolhelp32Snapshot.argtypes = [ctypes.wintypes.DWORD, ctypes.wintypes.DWORD]
+
+    snapshot = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+    if snapshot == INVALID_HANDLE_VALUE:
+        return []
+
+    try:
+        pe = PROCESSENTRY32()
+        pe.dwSize = ctypes.sizeof(PROCESSENTRY32)
+
+        infos: list[ProcessInfo] = []
+
+        if not kernel32.Process32First(snapshot, ctypes.byref(pe)):
+            return []
+
+        while True:
+            if pe.th32ParentProcessID == pid:
+                name = pe.szExeFile.decode("utf-8", errors="replace")
+                infos.append(
+                    ProcessInfo(
+                        pid=pe.th32ProcessID,
+                        name=name,
+                        exe=None,
+                        cmdline=None,
+                    )
+                )
+            if not kernel32.Process32Next(snapshot, ctypes.byref(pe)):
+                break
+
+        return infos
+    finally:
+        kernel32.CloseHandle(snapshot)
 
 
 # ---------------------------------------------------------------------------
@@ -140,7 +155,19 @@ def _enum_windows_for_pid(pid: int) -> bool:
             return False  # stop enumeration
         return True  # continue
 
-    user32.EnumWindows(WNDENUMPROC(_callback), 0)
+    user32.EnumWindows.argtypes = [WNDENUMPROC, ctypes.wintypes.LPARAM]
+    user32.EnumWindows.restype = ctypes.wintypes.BOOL
+
+    ret = user32.EnumWindows(WNDENUMPROC(_callback), 0)
+
+    # EnumWindows returns 0 both on early callback termination and on real
+    # errors.  If we found a window the early exit is expected; otherwise
+    # check GetLastError to distinguish a genuine failure.
+    if ret == 0 and not found[0]:
+        err = ctypes.get_last_error()
+        if err != 0:
+            _log.debug("EnumWindows returned error code %d for pid %d", err, pid)
+
     return found[0]
 
 
@@ -183,17 +210,3 @@ def get_creation_flags(pid: int) -> int | None:
     # Returning None is the correct safe default; callers should infer
     # console behaviour from PE subsystem + observed console host presence.
     return None
-
-
-# ---------------------------------------------------------------------------
-# PE subsystem for a running process (convenience wrapper)
-# ---------------------------------------------------------------------------
-
-
-def get_process_pe_subsystem(exe_path: str | None) -> Subsystem | None:
-    """Return the PE subsystem for *exe_path*, or None."""
-    if exe_path is None:
-        return None
-    from launch_lab.inspect_pe import inspect_pe
-
-    return inspect_pe(exe_path)

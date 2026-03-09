@@ -9,7 +9,8 @@ Spawns child processes for a given scenario and collects observable facts:
 - console-window and visible-window detection (Windows)
 
 Windows-specific process tree and window detection is provided by
-detect_windows.py, which is only imported on win32.
+detect_windows.py, which is imported unconditionally but returns safe
+defaults (None / empty list) on non-Windows platforms.
 """
 
 from __future__ import annotations
@@ -50,6 +51,11 @@ def _uv_version() -> str | None:
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
     return None
+
+
+def is_uv_available() -> bool:
+    """Return True if ``uv`` is found on PATH and responds to ``--version``."""
+    return _uv_version() is not None
 
 
 def _parse_launcher(value: str) -> LauncherKind:
@@ -126,8 +132,9 @@ def run_scenario(
         exit_code = proc.returncode
         stdout_text = out or None
         stderr_text = err or None
-        stdout_available = out is not None
-        stderr_available = err is not None
+        # True when the process actually produced output (not just "pipe was connected")
+        stdout_available = bool(out)
+        stderr_available = bool(err)
 
     except FileNotFoundError:
         exit_code = None

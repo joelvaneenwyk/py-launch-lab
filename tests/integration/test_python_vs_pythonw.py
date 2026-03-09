@@ -5,10 +5,10 @@ These tests spawn real processes and verify observable behaviour.
 They are skipped on non-Windows unless the scenario does not require Windows.
 
 Covered scenarios:
-  - python-script-py   : python  hello.py   → CUI, console expected, stdout available
+  - python-script-py   : python  hello.py   → CUI, console expected, stdout produced
   - python-script-pyw  : python  hello.pyw  → CUI, may delegate to pythonw
-  - pythonw-script-py  : pythonw hello.py   → GUI, no console window, stdout absent
-  - pythonw-script-pyw : pythonw hello.pyw  → GUI, no console window, stdout absent
+  - pythonw-script-py  : pythonw hello.py   → GUI, no console window, no stdout produced
+  - pythonw-script-pyw : pythonw hello.pyw  → GUI, no console window, no stdout produced
 """
 
 import json
@@ -34,7 +34,6 @@ def test_python_script_py_exits_zero():
     assert result.scenario_id == "python-script-py"
     assert result.exit_code == 0
     assert result.stdout_available is True
-    assert result.stderr_available is True
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows-only integration test")

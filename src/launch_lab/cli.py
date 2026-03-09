@@ -84,15 +84,20 @@ def matrix_cmd(
         import sys as _sys
 
         from launch_lab.matrix import get_matrix
-        from launch_lab.runner import run_scenario
+        from launch_lab.runner import is_uv_available, run_scenario
 
         matrix = get_matrix()
+        uv_available = is_uv_available()
         console.print(f"Running {len(matrix)} scenarios …")
         executed = 0
         skipped = 0
         for scenario in matrix:
             if scenario.windows_only and _sys.platform != "win32":
                 console.print(f"  [dim]SKIP[/dim] {scenario.scenario_id} (Windows-only)")
+                skipped += 1
+                continue
+            if scenario.requires_uv and not uv_available:
+                console.print(f"  [dim]SKIP[/dim] {scenario.scenario_id} (uv not available)")
                 skipped += 1
                 continue
             if scenario.skip_reason:
