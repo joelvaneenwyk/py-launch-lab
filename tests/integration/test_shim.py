@@ -21,12 +21,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 CRATE_DIR = REPO_ROOT / "crates" / "pyshim-win"
 
 
-@pytest.fixture(autouse=True)
-def require_windows_for_shim_launch():
-    """Skip tests that actually launch via the GUI shim on non-Windows."""
-    # Build/schema tests can run everywhere; individual tests mark themselves
-    # as windows-only if they exercise the Windows CreateProcess path.
-
 
 def _shim_binary() -> Path | None:
     """Return the path to the built shim binary, or None if not built."""
@@ -111,9 +105,14 @@ class TestShimCLI:
 
     def test_version_flag(self):
         """--version should exit 0 and print a version string."""
+        import re
+
         result = self._run_shim("--version")
         assert result.returncode == 0
-        assert "pyshim-win" in result.stdout.lower() or "0." in result.stdout
+        # Accept any semver-like version string (e.g. "0.1.0", "1.2.3")
+        assert re.search(r"\d+\.\d+", result.stdout), (
+            f"No version pattern found in: {result.stdout}"
+        )
 
     def test_missing_command_exits_nonzero(self):
         """Invoking without a command should produce an error."""

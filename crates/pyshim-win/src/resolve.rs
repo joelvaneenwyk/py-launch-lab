@@ -9,6 +9,7 @@ use std::path::PathBuf;
 /// Known interpreters and their GUI-subsystem counterparts.
 ///
 /// When `--hide-console` is active the shim will try the GUI variant first.
+/// `uvw` is a project-specific GUI-subsystem build of `uv` (see M3 scenarios).
 const GUI_ALTERNATIVES: &[(&str, &str)] = &[
     ("python", "pythonw"),
     ("python3", "pythonw"),

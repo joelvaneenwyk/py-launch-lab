@@ -129,18 +129,56 @@ fn launch_impl(exe: &str, args: &[&str], _hide_console: bool) -> (Option<i32>, O
 
 /// Quote a command-line argument for Windows CreateProcess.
 ///
-/// Simple quoting: wrap in double quotes if the argument contains spaces or
-/// special characters.
+/// Implements the escaping algorithm documented in Microsoft's
+/// "Parsing C Command-Line Arguments" reference: backslashes are
+/// literal unless immediately followed by a double-quote.
 #[cfg(windows)]
 fn quote_arg(arg: &str) -> String {
     if arg.is_empty() {
         return "\"\"".to_string();
     }
-    if arg.contains(' ') || arg.contains('\t') || arg.contains('"') {
-        // Escape embedded double quotes
-        let escaped = arg.replace('"', "\\\"");
-        format!("\"{}\"", escaped)
-    } else {
-        arg.to_string()
+    // If no special characters, return as-is.
+    if !arg.contains(' ')
+        && !arg.contains('\t')
+        && !arg.contains('"')
+        && !arg.contains('\\')
+    {
+        return arg.to_string();
     }
+
+    let mut result = String::with_capacity(arg.len() + 4);
+    result.push('"');
+    let mut backslash_count = 0usize;
+
+    for ch in arg.chars() {
+        match ch {
+            '\\' => {
+                backslash_count += 1;
+            }
+            '"' => {
+                // Double the backslashes before a quote, then escape the quote.
+                for _ in 0..backslash_count * 2 + 1 {
+                    result.push('\\');
+                }
+                result.push('"');
+                backslash_count = 0;
+            }
+            _ => {
+                // Flush pending backslashes literally.
+                for _ in 0..backslash_count {
+                    result.push('\\');
+                }
+                result.push(ch);
+                backslash_count = 0;
+            }
+        }
+    }
+
+    // If the argument ends with backslashes, double them (they precede
+    // the closing quote).
+    for _ in 0..backslash_count * 2 {
+        result.push('\\');
+    }
+    result.push('"');
+    result
 }
