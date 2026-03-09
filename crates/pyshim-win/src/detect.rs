@@ -5,6 +5,7 @@
 
 /// Subsystem classification for a Windows executable.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum Subsystem {
     Gui,
     Cui,
