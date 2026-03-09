@@ -1,6 +1,6 @@
 # Milestone M3 — uv and uvw Scenario Coverage
 
-> Issue: TBD
+> Issue: #6 (<https://github.com/joelvaneenwyk/py-launch-lab/issues/6>)
 
 ## Description
 

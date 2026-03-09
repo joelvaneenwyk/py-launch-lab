@@ -1,6 +1,6 @@
 # Milestone M2 — Direct Python vs PythonW Launch Validation
 
-> Issue: TBD
+> Issue: #5 (<https://github.com/joelvaneenwyk/py-launch-lab/issues/5>)
 
 ## Description
 
