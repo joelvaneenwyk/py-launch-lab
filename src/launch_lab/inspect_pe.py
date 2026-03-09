@@ -11,10 +11,8 @@ References:
 from __future__ import annotations
 
 import struct
-import sys
-from io import RawIOBase
 from pathlib import Path
-from typing import TYPE_CHECKING, BinaryIO, Optional
+from typing import BinaryIO
 
 from launch_lab.models import Subsystem
 
@@ -25,7 +23,7 @@ _SUBSYSTEM_CUI = 3                 # Console
 _SUBSYSTEM_GUI = 2                 # Windows GUI
 
 
-def inspect_pe(path: str | Path) -> Optional[Subsystem]:
+def inspect_pe(path: str | Path) -> Subsystem | None:
     """
     Inspect a PE executable and return its subsystem classification.
 
@@ -47,7 +45,7 @@ def inspect_pe(path: str | Path) -> Optional[Subsystem]:
         return None
 
 
-def _read_subsystem(f: "BinaryIO") -> Subsystem:
+def _read_subsystem(f: BinaryIO) -> Subsystem:
     """Read PE subsystem from an open binary file."""
     # DOS header — check MZ signature
     dos_sig = struct.unpack("<H", f.read(2))[0]

@@ -12,13 +12,14 @@ detect_windows.py, which is only imported on win32.
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
-from pathlib import Path
 from typing import Optional
 
-from launch_lab.models import LauncherKind, ScenarioResult, Subsystem
+from launch_lab.inspect_pe import inspect_pe
 from launch_lab.matrix import Scenario
+from launch_lab.models import LauncherKind, ScenarioResult
 
 
 def _python_version() -> str:
@@ -61,6 +62,10 @@ def run_scenario(scenario: Scenario, timeout: float = 30.0) -> ScenarioResult:
 
     cmd = _build_command(scenario)
 
+    # M1: Resolve the actual executable and inspect its PE subsystem
+    resolved_executable = shutil.which(cmd[0])
+    pe_subsystem = inspect_pe(resolved_executable) if resolved_executable else None
+
     try:
         proc = subprocess.run(
             cmd,
@@ -94,9 +99,9 @@ def run_scenario(scenario: Scenario, timeout: float = 30.0) -> ScenarioResult:
         launcher=_parse_launcher(scenario.launcher),
         mode=scenario.mode,
         fixture=scenario.fixture,
-        resolved_executable=None,  # TODO(M1): resolve via inspect_pe
+        resolved_executable=resolved_executable,
         resolved_kind=None,
-        pe_subsystem=None,          # TODO(M1): fill from inspect_pe
+        pe_subsystem=pe_subsystem,
         creation_flags=None,        # TODO(M2): capture on Windows
         stdout_available=stdout_available,
         stderr_available=stderr_available,
