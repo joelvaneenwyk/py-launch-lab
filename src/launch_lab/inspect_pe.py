@@ -12,8 +12,9 @@ from __future__ import annotations
 
 import struct
 import sys
+from io import RawIOBase
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, BinaryIO, Optional
 
 from launch_lab.models import Subsystem
 
@@ -46,7 +47,7 @@ def inspect_pe(path: str | Path) -> Optional[Subsystem]:
         return None
 
 
-def _read_subsystem(f) -> Subsystem:  # type: ignore[type-arg]
+def _read_subsystem(f: "BinaryIO") -> Subsystem:
     """Read PE subsystem from an open binary file."""
     # DOS header — check MZ signature
     dos_sig = struct.unpack("<H", f.read(2))[0]

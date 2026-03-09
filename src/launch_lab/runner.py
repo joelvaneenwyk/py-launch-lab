@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import subprocess
 import sys
-import time
 from pathlib import Path
 from typing import Optional
 
@@ -62,7 +61,6 @@ def run_scenario(scenario: Scenario, timeout: float = 30.0) -> ScenarioResult:
 
     cmd = _build_command(scenario)
 
-    start = time.monotonic()
     try:
         proc = subprocess.run(
             cmd,
@@ -70,28 +68,23 @@ def run_scenario(scenario: Scenario, timeout: float = 30.0) -> ScenarioResult:
             text=True,
             timeout=timeout,
         )
-        elapsed = time.monotonic() - start
         exit_code = proc.returncode
         stdout_text = proc.stdout or None
         stderr_text = proc.stderr or None
         stdout_available = proc.stdout is not None
         stderr_available = proc.stderr is not None
     except FileNotFoundError:
-        elapsed = time.monotonic() - start
         exit_code = None
         stdout_text = None
         stderr_text = f"Executable not found: {cmd[0]}"
         stdout_available = False
         stderr_available = False
     except subprocess.TimeoutExpired:
-        elapsed = timeout
         exit_code = None
         stdout_text = None
         stderr_text = f"Timed out after {timeout}s"
         stdout_available = False
         stderr_available = False
-
-    _ = elapsed  # will be used in result model when timing field is added
 
     return ScenarioResult(
         scenario_id=scenario.scenario_id,
