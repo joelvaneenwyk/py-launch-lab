@@ -1,15 +1,19 @@
 //! Child process launcher for pyshim-win.
 //!
-//! TODO(M4): Replace stub with real CreateProcess call using Windows API.
+//! On Windows, uses `CreateProcessW` with appropriate `dwCreationFlags` to
+//! control console visibility.  On other platforms, falls back to
+//! `std::process::Command`.
 
 use crate::cli::Args;
+use crate::detect::Subsystem;
 use crate::result::LaunchResult;
 
 /// Launch the target command as a child process.
-///
-/// On Windows this will use `CreateProcess` with appropriate `dwCreationFlags`
-/// to control console visibility.  The stub below falls back to `std::process::Command`.
-pub fn launch(args: &Args, resolved: Option<&str>) -> LaunchResult {
+pub fn launch(
+    args: &Args,
+    resolved: Option<&str>,
+    detected_subsystem: Option<&Subsystem>,
+) -> LaunchResult {
     let exe = match resolved {
         Some(r) => r.to_string(),
         None => {
@@ -17,36 +21,126 @@ pub fn launch(args: &Args, resolved: Option<&str>) -> LaunchResult {
                 exit_code: Some(127),
                 resolved_executable: None,
                 hide_console: args.hide_console,
+                detected_subsystem: detected_subsystem.cloned(),
                 error: Some("Could not resolve target executable".to_string()),
             };
         }
     };
 
-    let child_args = if args.command.len() > 1 {
-        &args.command[1..]
+    let child_args: Vec<&str> = if args.command.len() > 1 {
+        args.command[1..].iter().map(|s| s.as_str()).collect()
     } else {
-        &[][..]
+        vec![]
     };
 
-    // TODO(M4): On Windows, use CreateProcess with CREATE_NO_WINDOW when
-    //           hide_console is true.  For now use std::process::Command as
-    //           a cross-platform stub.
-    let status = std::process::Command::new(&exe)
-        .args(child_args)
-        .status();
+    let result = launch_impl(&exe, &child_args, args.hide_console);
 
-    match status {
-        Ok(s) => LaunchResult {
-            exit_code: s.code(),
-            resolved_executable: Some(exe),
-            hide_console: args.hide_console,
-            error: None,
-        },
-        Err(e) => LaunchResult {
-            exit_code: Some(1),
-            resolved_executable: Some(exe),
-            hide_console: args.hide_console,
-            error: Some(e.to_string()),
-        },
+    LaunchResult {
+        exit_code: result.0,
+        resolved_executable: Some(exe),
+        hide_console: args.hide_console,
+        detected_subsystem: detected_subsystem.cloned(),
+        error: result.1,
+    }
+}
+
+/// Platform-specific launch implementation.
+///
+/// Returns (exit_code, error).
+#[cfg(windows)]
+fn launch_impl(exe: &str, args: &[&str], hide_console: bool) -> (Option<i32>, Option<String>) {
+    use std::ffi::OsStr;
+    use std::iter::once;
+    use std::os::windows::ffi::OsStrExt;
+
+    use windows_sys::Win32::Foundation::{CloseHandle, WAIT_FAILED};
+    use windows_sys::Win32::System::Threading::{
+        CreateProcessW, WaitForSingleObject, GetExitCodeProcess,
+        PROCESS_INFORMATION, STARTUPINFOW,
+        CREATE_NO_WINDOW, INFINITE,
+    };
+
+    // Build the command line as a single wide string (Windows convention).
+    let mut cmdline_str = quote_arg(exe);
+    for arg in args {
+        cmdline_str.push(' ');
+        cmdline_str.push_str(&quote_arg(arg));
+    }
+    let mut cmdline_wide: Vec<u16> = OsStr::new(&cmdline_str)
+        .encode_wide()
+        .chain(once(0))
+        .collect();
+
+    let creation_flags: u32 = if hide_console { CREATE_NO_WINDOW } else { 0 };
+
+    let mut si: STARTUPINFOW = unsafe { std::mem::zeroed() };
+    si.cb = std::mem::size_of::<STARTUPINFOW>() as u32;
+    let mut pi: PROCESS_INFORMATION = unsafe { std::mem::zeroed() };
+
+    let ok = unsafe {
+        CreateProcessW(
+            std::ptr::null(),          // lpApplicationName
+            cmdline_wide.as_mut_ptr(), // lpCommandLine
+            std::ptr::null(),          // lpProcessAttributes
+            std::ptr::null(),          // lpThreadAttributes
+            0,                         // bInheritHandles (FALSE)
+            creation_flags,            // dwCreationFlags
+            std::ptr::null(),          // lpEnvironment
+            std::ptr::null(),          // lpCurrentDirectory
+            &si,                       // lpStartupInfo
+            &mut pi,                   // lpProcessInformation
+        )
+    };
+
+    if ok == 0 {
+        let err = std::io::Error::last_os_error();
+        return (Some(1), Some(format!("CreateProcessW failed: {}", err)));
+    }
+
+    // Wait for the child to exit.
+    let wait = unsafe { WaitForSingleObject(pi.hProcess, INFINITE) };
+    if wait == WAIT_FAILED {
+        let err = std::io::Error::last_os_error();
+        unsafe {
+            CloseHandle(pi.hThread);
+            CloseHandle(pi.hProcess);
+        }
+        return (Some(1), Some(format!("WaitForSingleObject failed: {}", err)));
+    }
+
+    let mut exit_code: u32 = 1;
+    unsafe {
+        GetExitCodeProcess(pi.hProcess, &mut exit_code);
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+    }
+
+    (Some(exit_code as i32), None)
+}
+
+/// Fallback launch implementation for non-Windows platforms.
+#[cfg(not(windows))]
+fn launch_impl(exe: &str, args: &[&str], _hide_console: bool) -> (Option<i32>, Option<String>) {
+    match std::process::Command::new(exe).args(args).status() {
+        Ok(s) => (s.code(), None),
+        Err(e) => (Some(1), Some(e.to_string())),
+    }
+}
+
+/// Quote a command-line argument for Windows CreateProcess.
+///
+/// Simple quoting: wrap in double quotes if the argument contains spaces or
+/// special characters.
+#[cfg(windows)]
+fn quote_arg(arg: &str) -> String {
+    if arg.is_empty() {
+        return "\"\"".to_string();
+    }
+    if arg.contains(' ') || arg.contains('\t') || arg.contains('"') {
+        // Escape embedded double quotes
+        let escaped = arg.replace('"', "\\\"");
+        format!("\"{}\"", escaped)
+    } else {
+        arg.to_string()
     }
 }
