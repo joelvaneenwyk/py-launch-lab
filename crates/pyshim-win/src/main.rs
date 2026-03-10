@@ -22,16 +22,16 @@ use std::process;
 fn main() {
     let args = cli::parse();
 
-    // Resolve the target executable.
-    let resolved = resolve::resolve_target(&args.command);
+    // Resolve the target executable (respecting --hide-console preference).
+    let resolved = resolve::resolve_target(&args.command, args.hide_console);
 
-    // TODO(M4): Detect subsystem of the resolved executable.
-    let _subsystem = detect::detect_subsystem(resolved.as_deref());
+    // Detect subsystem of the resolved executable.
+    let subsystem = detect::detect_subsystem(resolved.as_deref());
 
-    // TODO(M4): Launch the child process with appropriate creation flags.
-    let launch_result = launch::launch(&args, resolved.as_deref());
+    // Launch the child process with appropriate creation flags.
+    let launch_result = launch::launch(&args, resolved.as_deref(), subsystem.as_ref());
 
-    // Emit the result as JSON to stdout (if available) or a log file.
+    // Emit the result as JSON to stdout.
     result::emit(&launch_result);
 
     process::exit(launch_result.exit_code.unwrap_or(1));
