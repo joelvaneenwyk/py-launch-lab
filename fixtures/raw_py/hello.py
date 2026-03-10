@@ -1,4 +1,5 @@
 """Minimal console script fixture for py-launch-lab."""
+
 import sys
 import time
 

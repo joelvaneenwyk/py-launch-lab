@@ -4,7 +4,6 @@ Integration tests: pyshim-win Rust shim scenarios.
 TODO(M4): Implement.
 """
 
-import shutil
 import sys
 
 import pytest

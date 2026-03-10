@@ -8,13 +8,12 @@ new optional fields may be added but existing ones are never removed.
 
 from __future__ import annotations
 
-from enum import Enum
-from typing import Optional
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class Subsystem(str, Enum):
+class Subsystem(StrEnum):
     """Windows PE subsystem classification."""
 
     GUI = "GUI"
@@ -23,7 +22,7 @@ class Subsystem(str, Enum):
     NOT_PE = "NOT_PE"  # e.g. a script or non-Windows target
 
 
-class LauncherKind(str, Enum):
+class LauncherKind(StrEnum):
     """The top-level launcher used to start the scenario."""
 
     PYTHON = "python"
@@ -43,9 +42,9 @@ class ProcessInfo(BaseModel):
 
     pid: int
     name: str
-    exe: Optional[str] = None
-    pe_subsystem: Optional[Subsystem] = None
-    cmdline: Optional[list[str]] = None
+    exe: str | None = None
+    pe_subsystem: Subsystem | None = None
+    cmdline: list[str] | None = None
 
 
 class ScenarioResult(BaseModel):
@@ -61,7 +60,7 @@ class ScenarioResult(BaseModel):
     scenario_id: str = Field(..., description="Unique identifier for the scenario.")
     platform: str = Field(..., description="sys.platform value (e.g. 'win32', 'linux').")
     python_version: str = Field(..., description="Python version string (e.g. '3.12.3').")
-    uv_version: Optional[str] = Field(None, description="uv version string if available.")
+    uv_version: str | None = Field(None, description="uv version string if available.")
 
     # What was launched
     launcher: LauncherKind = Field(..., description="Top-level launcher kind.")
@@ -69,34 +68,34 @@ class ScenarioResult(BaseModel):
     fixture: str = Field(..., description="Fixture name used in the scenario.")
 
     # Resolution
-    resolved_executable: Optional[str] = Field(
+    resolved_executable: str | None = Field(
         None, description="Absolute path of the executable that was actually invoked."
     )
-    resolved_kind: Optional[str] = Field(
+    resolved_kind: str | None = Field(
         None, description="Human-readable classification of the resolved executable."
     )
 
     # PE inspection
-    pe_subsystem: Optional[Subsystem] = Field(
+    pe_subsystem: Subsystem | None = Field(
         None, description="PE subsystem of the resolved executable."
     )
 
     # Process creation
-    creation_flags: Optional[int] = Field(
+    creation_flags: int | None = Field(
         None, description="Windows PROCESS_CREATION_FLAGS value used."
     )
 
     # Observability
-    stdout_available: Optional[bool] = Field(
+    stdout_available: bool | None = Field(
         None, description="Whether the process had a readable stdout stream."
     )
-    stderr_available: Optional[bool] = Field(
+    stderr_available: bool | None = Field(
         None, description="Whether the process had a readable stderr stream."
     )
-    visible_window_detected: Optional[bool] = Field(
+    visible_window_detected: bool | None = Field(
         None, description="Whether a visible top-level window was detected."
     )
-    console_window_detected: Optional[bool] = Field(
+    console_window_detected: bool | None = Field(
         None, description="Whether a console window (conhost/WT) was detected."
     )
 
@@ -107,9 +106,9 @@ class ScenarioResult(BaseModel):
     )
 
     # Outcome
-    exit_code: Optional[int] = Field(None, description="Exit code of the top-level process.")
-    stdout_text: Optional[str] = Field(None, description="Captured stdout (truncated if large).")
-    stderr_text: Optional[str] = Field(None, description="Captured stderr (truncated if large).")
-    notes: Optional[str] = Field(None, description="Free-text notes about the scenario run.")
+    exit_code: int | None = Field(None, description="Exit code of the top-level process.")
+    stdout_text: str | None = Field(None, description="Captured stdout (truncated if large).")
+    stderr_text: str | None = Field(None, description="Captured stderr (truncated if large).")
+    notes: str | None = Field(None, description="Free-text notes about the scenario run.")
 
     model_config = ConfigDict(use_enum_values=True)

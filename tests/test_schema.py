@@ -7,8 +7,6 @@ round-trips correctly.  They do not require Windows or any external tools.
 
 import json
 
-import pytest
-
 from launch_lab.models import (
     LauncherKind,
     ProcessInfo,

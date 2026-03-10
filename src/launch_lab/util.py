@@ -8,10 +8,9 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
 
 
-def find_executable(name: str) -> Optional[Path]:
+def find_executable(name: str) -> Path | None:
     """Return the absolute path of `name` on PATH, or None."""
     found = shutil.which(name)
     return Path(found) if found else None

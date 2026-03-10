@@ -5,9 +5,8 @@ These tests check that scenario definitions are well-formed, unique, and
 consistent.  They do not run any processes.
 """
 
-import pytest
 
-from launch_lab.matrix import Scenario, get_matrix, get_scenario
+from launch_lab.matrix import get_matrix, get_scenario
 
 
 def test_matrix_is_non_empty():

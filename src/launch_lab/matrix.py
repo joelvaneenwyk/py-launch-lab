@@ -8,7 +8,6 @@ and collect.py do not need to change.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -28,7 +27,7 @@ class Scenario:
     description: str = ""
     windows_only: bool = False
     requires_uv: bool = False
-    skip_reason: Optional[str] = None
+    skip_reason: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -179,7 +178,7 @@ def get_matrix() -> list[Scenario]:
     return list(_SCENARIOS)
 
 
-def get_scenario(scenario_id: str) -> Optional[Scenario]:
+def get_scenario(scenario_id: str) -> Scenario | None:
     """Look up a scenario by its ID.  Returns None if not found."""
     for s in _SCENARIOS:
         if s.scenario_id == scenario_id:
