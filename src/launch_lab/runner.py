@@ -82,8 +82,11 @@ def run_scenario(
 
     cmd = _build_command(scenario)
 
-    # Resolve the actual executable and inspect its PE subsystem
-    resolved_executable = shutil.which(cmd[0])
+    # Resolve the actual executable and inspect its PE subsystem.
+    # cmd[0] may already be an absolute path (from _resolve_launcher), so
+    # check if it exists directly before falling back to shutil.which().
+    _cmd0 = Path(cmd[0])
+    resolved_executable = str(_cmd0) if _cmd0.is_file() else shutil.which(cmd[0])
     pe_subsystem = inspect_pe(resolved_executable) if resolved_executable else None
 
     # --- spawn and observe ---
@@ -173,6 +176,29 @@ def run_scenario(
     return result
 
 
+def _resolve_launcher(launcher: str) -> str:
+    """Resolve a launcher name to a full path if needed.
+
+    For ``pyshim-win`` the binary lives inside the Cargo build tree and is
+    not on PATH.  We look for it in the ``crates/pyshim-win/target``
+    directory (release first, then debug).  If the binary is already on
+    PATH we return it unchanged.
+    """
+    if shutil.which(launcher) is not None:
+        return launcher
+
+    if launcher == "pyshim-win":
+        project_root = Path(__file__).resolve().parents[2]
+        for profile in ("release", "debug"):
+            candidate = (
+                project_root / "crates" / "pyshim-win" / "target" / profile / "pyshim-win.exe"
+            )
+            if candidate.is_file():
+                return str(candidate)
+
+    return launcher
+
+
 def _build_command(scenario: Scenario) -> list[str]:
     """Build the command list for a scenario."""
-    return [scenario.launcher, *scenario.args]
+    return [_resolve_launcher(scenario.launcher), *scenario.args]
