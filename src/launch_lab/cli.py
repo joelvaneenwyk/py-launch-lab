@@ -141,11 +141,13 @@ def report_cmd(
 ) -> None:
     """Build reports from collected artifacts."""
     if action == "build":
+        from launch_lab.html_report import build_html_report
         from launch_lab.report import build_report
 
+        json_path = Path(json_dir)
         findings_path = Path(findings) if findings else None
         dest = build_report(
-            json_dir=Path(json_dir),
+            json_dir=json_path,
             output_dir=Path(output),
             findings_dir=findings_path,
         )
@@ -155,6 +157,9 @@ def report_cmd(
         console.print(f"[green]Report written -> {dest}[/green]")
         if findings_path:
             console.print(f"[green]Findings written -> {findings_path / 'report.md'}[/green]")
+        html_dest = build_html_report(json_dir=json_path)
+        if html_dest is not None:
+            console.print(f"[green]HTML report written -> {html_dest}[/green]")
     else:
         console.print(f"[red]Unknown action:[/red] {action}")
         raise typer.Exit(1)

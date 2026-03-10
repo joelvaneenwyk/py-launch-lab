@@ -55,6 +55,14 @@ jobs:
           path: artifacts/markdown/
           if-no-files-found: ignore
 
+      - name: Upload HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scenario-report-html
+          path: artifacts/html/
+          if-no-files-found: ignore
+
       - name: Upload findings
         if: always()
         uses: actions/upload-artifact@v4
