@@ -31,6 +31,37 @@ jobs:
         run: uv run pytest tests/integration -v
         continue-on-error: true
 
+      - name: Run full scenario matrix
+        run: uv run py-launch-lab matrix run
+        continue-on-error: true
+
+      - name: Generate report
+        run: uv run py-launch-lab report build --findings docs/findings
+
+      - name: Upload JSON artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scenario-results-json
+          path: artifacts/json/
+          if-no-files-found: ignore
+
+      - name: Upload Markdown report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scenario-report-markdown
+          path: artifacts/markdown/
+          if-no-files-found: ignore
+
+      - name: Upload findings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-findings
+          path: docs/findings/
+          if-no-files-found: ignore
+
   rust-shim:
     name: Rust shim (Windows)
     runs-on: windows-latest
