@@ -5,7 +5,6 @@ These tests check that scenario definitions are well-formed, unique, and
 consistent.  They do not run any processes.
 """
 
-
 from launch_lab.matrix import get_matrix, get_scenario
 
 

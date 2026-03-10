@@ -241,9 +241,7 @@ class TestShimWindows:
         """python.exe should be detected as CUI subsystem."""
         result = self._run_shim("--", "python", "-c", "print('ok')")
         lines = result.stdout.strip().split("\n")
-        json_start = next(
-            (i for i, line in enumerate(lines) if line.strip().startswith("{")), None
-        )
+        json_start = next((i for i, line in enumerate(lines) if line.strip().startswith("{")), None)
         assert json_start is not None
         data = json.loads("\n".join(lines[json_start:]))
         assert data["detected_subsystem"] == "Cui"
