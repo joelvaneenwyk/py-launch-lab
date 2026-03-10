@@ -7,11 +7,16 @@ on:
       - "docs/**"
       - "README.md"
       - "plan.md"
+  workflow_run:
+    workflows: ["Windows CI"]
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: read
   pages: write
   id-token: write
+  actions: read
 
 concurrency:
   group: "pages"
@@ -21,6 +26,9 @@ jobs:
   validate:
     name: Validate docs
     runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     steps:
       - uses: actions/checkout@v4
 
@@ -43,13 +51,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Download findings from Windows CI
+        if: github.event_name == 'workflow_run'
+        uses: actions/download-artifact@v4
+        with:
+          name: docs-findings
+          path: docs/findings/
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
       - name: Build docs site
         run: |
           mkdir -p _site
           cp README.md _site/index.md
           cp plan.md _site/plan.md
           cp -r docs/* _site/
-          # Generate a simple index page
+          # Generate a simple HTML index page
           cat > _site/index.html <<'EOF'
           <!DOCTYPE html>
           <html lang="en">
@@ -63,12 +81,12 @@ jobs:
             </style>
           </head>
           <body>
-            <h1>Python Launch Lab — Documentation</h1>
+            <h1>Python Launch Lab -- Documentation</h1>
             <ul>
               <li><a href="overview.md">Architecture Overview</a></li>
               <li><a href="windows-launch-semantics.md">Windows Launch Semantics</a></li>
               <li><a href="scenario-matrix.md">Scenario Matrix</a></li>
-              <li><a href="findings/">Findings</a></li>
+              <li><a href="findings/report.md">Findings</a></li>
               <li><a href="plan.md">Project Plan</a></li>
             </ul>
           </body>

@@ -37,6 +37,7 @@ jobs:
 
       - name: Generate report
         run: uv run py-launch-lab report build --findings docs/findings
+        continue-on-error: true
 
       - name: Upload JSON artifacts
         if: always()

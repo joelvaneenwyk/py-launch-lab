@@ -135,7 +135,7 @@ def report_cmd(
     action: str = typer.Argument("build", help="Action: 'build'."),
     json_dir: str = typer.Option("artifacts/json", "--json-dir", "-j", help="JSON artifacts dir."),
     output: str = typer.Option("artifacts/markdown", "--output", "-o", help="Output directory."),
-    findings: str = typer.Option(
+    findings: str | None = typer.Option(
         None, "--findings", "-f", help="Also write report to findings directory."
     ),
 ) -> None:
