@@ -150,11 +150,11 @@ def report_cmd(
             findings_dir=findings_path,
         )
         if dest is None:
-            console.print("[yellow]No JSON results found — nothing to report.[/yellow]")
+            console.print("[yellow]No JSON results found -- nothing to report.[/yellow]")
             raise typer.Exit(1)
-        console.print(f"[green]Report written → {dest}[/green]")
+        console.print(f"[green]Report written -> {dest}[/green]")
         if findings_path:
-            console.print(f"[green]Findings written → {findings_path / 'report.md'}[/green]")
+            console.print(f"[green]Findings written -> {findings_path / 'report.md'}[/green]")
     else:
         console.print(f"[red]Unknown action:[/red] {action}")
         raise typer.Exit(1)
