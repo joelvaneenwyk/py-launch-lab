@@ -133,13 +133,33 @@ def matrix_cmd(
 @app.command("report")
 def report_cmd(
     action: str = typer.Argument("build", help="Action: 'build'."),
+    json_dir: str = typer.Option("artifacts/json", "--json-dir", "-j", help="JSON artifacts dir."),
     output: str = typer.Option("artifacts/markdown", "--output", "-o", help="Output directory."),
+    findings: str | None = typer.Option(
+        None, "--findings", "-f", help="Also write report to findings directory."
+    ),
 ) -> None:
     """Build reports from collected artifacts."""
     if action == "build":
-        # TODO(M5): Implement report generation
-        console.print(f"[yellow]TODO:[/yellow] Report build → {output}")
-        raise typer.Exit(1)
+        from launch_lab.html_report import build_html_report
+        from launch_lab.report import build_report
+
+        json_path = Path(json_dir)
+        findings_path = Path(findings) if findings else None
+        dest = build_report(
+            json_dir=json_path,
+            output_dir=Path(output),
+            findings_dir=findings_path,
+        )
+        if dest is None:
+            console.print("[yellow]No JSON results found -- nothing to report.[/yellow]")
+            raise typer.Exit(1)
+        console.print(f"[green]Report written -> {dest}[/green]")
+        if findings_path:
+            console.print(f"[green]Findings written -> {findings_path / 'report.md'}[/green]")
+        html_dest = build_html_report(json_dir=json_path)
+        if html_dest is not None:
+            console.print(f"[green]HTML report written -> {html_dest}[/green]")
     else:
         console.print(f"[red]Unknown action:[/red] {action}")
         raise typer.Exit(1)

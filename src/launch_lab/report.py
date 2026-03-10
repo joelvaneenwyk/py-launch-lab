@@ -1,13 +1,13 @@
 """
 Report builder for py-launch-lab.
 
-Reads JSON artifacts and generates Markdown summary tables.
-
-TODO(M5): Implement full report generation.
+Reads JSON artifacts and generates Markdown summary tables grouped by
+launcher, with summary statistics and optional findings output.
 """
 
 from __future__ import annotations
 
+from collections import defaultdict
 from pathlib import Path
 
 from launch_lab.collect import load_all_results
@@ -19,13 +19,15 @@ _DEFAULT_OUTPUT = Path("artifacts/markdown")
 def build_report(
     json_dir: Path = Path("artifacts/json"),
     output_dir: Path = _DEFAULT_OUTPUT,
+    findings_dir: Path | None = None,
 ) -> Path | None:
     """
     Build a Markdown report from collected JSON artifacts.
 
     Returns the path to the generated report, or None if no results were found.
 
-    TODO(M5): Expand into a multi-section report with per-scenario tables.
+    If *findings_dir* is provided the same report is also written there so that
+    it can be served as part of the documentation site.
     """
     results = load_all_results(json_dir)
     if not results:
@@ -35,22 +37,113 @@ def build_report(
     dest = output_dir / "report.md"
 
     lines = _render_report(results)
-    dest.write_text("\n".join(lines), encoding="utf-8")
+    content = "\n".join(lines)
+    dest.write_text(content, encoding="utf-8")
+
+    if findings_dir is not None:
+        findings_dir.mkdir(parents=True, exist_ok=True)
+        findings_dest = findings_dir / "report.md"
+        findings_dest.write_text(content, encoding="utf-8")
+
     return dest
 
 
+# -- rendering helpers -------------------------------------------------------
+
+
 def _render_report(results: list[ScenarioResult]) -> list[str]:
-    """Render a simple Markdown table for the given results."""
-    lines: list[str] = [
+    """Render a multi-section Markdown report from collected results."""
+    lines: list[str] = []
+
+    lines.extend(_render_header(results))
+    lines.extend(_render_summary_table(results))
+    lines.extend(_render_per_launcher_sections(results))
+    lines.extend(_render_footer())
+
+    return lines
+
+
+def _render_header(results: list[ScenarioResult]) -> list[str]:
+    """Title and high-level summary statistics."""
+    passed = sum(1 for r in results if r.exit_code == 0)
+    failed = sum(1 for r in results if r.exit_code is not None and r.exit_code != 0)
+    unknown = sum(1 for r in results if r.exit_code is None)
+    platforms = sorted({r.platform for r in results})
+
+    lines = [
         "# Python Launch Lab — Results",
         "",
-        "| Scenario | Platform | Launcher | Exit Code | PE Subsystem | Console Window |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "## Summary",
+        "",
+        f"- **Total scenarios:** {len(results)}",
+        f"- **Passed (exit 0):** {passed}",
+        f"- **Failed (exit ≠ 0):** {failed}",
+        f"- **Unknown (no exit code):** {unknown}",
+        f"- **Platforms:** {', '.join(platforms)}",
+        "",
+    ]
+    return lines
+
+
+def _render_summary_table(results: list[ScenarioResult]) -> list[str]:
+    """Full results table across all scenarios."""
+    lines = [
+        "## All Scenarios",
+        "",
+        "| Scenario | Platform | Launcher | Exit Code | PE Subsystem"
+        " | Console Window | Visible Window |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
     ]
     for r in results:
+        exit_display = "✅ 0" if r.exit_code == 0 else f"❌ {r.exit_code}"
+        if r.exit_code is None:
+            exit_display = "—"
         lines.append(
             f"| {r.scenario_id} | {r.platform} | {r.launcher} "
-            f"| {r.exit_code} | {r.pe_subsystem} | {r.console_window_detected} |"
+            f"| {exit_display} | {_na(r.pe_subsystem)} "
+            f"| {_na(r.console_window_detected)} | {_na(r.visible_window_detected)} |"
         )
     lines.append("")
     return lines
+
+
+def _render_per_launcher_sections(results: list[ScenarioResult]) -> list[str]:
+    """One sub-section per launcher kind, with a focused table."""
+    grouped: dict[str, list[ScenarioResult]] = defaultdict(list)
+    for r in results:
+        grouped[r.launcher].append(r)
+
+    lines: list[str] = []
+    for launcher in sorted(grouped):
+        group = grouped[launcher]
+        lines.append(f"### Launcher: `{launcher}`")
+        lines.append("")
+        lines.append(
+            "| Scenario | Exit | Subsystem | stdout | stderr |"
+        )
+        lines.append("| --- | --- | --- | --- | --- |")
+        for r in group:
+            exit_display = str(r.exit_code) if r.exit_code is not None else "—"
+            lines.append(
+                f"| {r.scenario_id} | {exit_display} "
+                f"| {_na(r.pe_subsystem)} | {_na(r.stdout_available)} "
+                f"| {_na(r.stderr_available)} |"
+            )
+        lines.append("")
+    return lines
+
+
+def _render_footer() -> list[str]:
+    return [
+        "---",
+        "",
+        "*Report generated by py-launch-lab `report.py`.*",
+        "",
+    ]
+
+
+def _na(value: object) -> str:
+    """Format a value for Markdown display, showing '—' for None."""
+    if value is None:
+        return "—"
+    return str(value)
