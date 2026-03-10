@@ -91,6 +91,7 @@ def matrix_cmd(
         console.print(f"Running {len(matrix)} scenarios …")
         executed = 0
         skipped = 0
+        failed: list[str] = []
         for scenario in matrix:
             if scenario.windows_only and _sys.platform != "win32":
                 console.print(f"  [dim]SKIP[/dim] {scenario.scenario_id} (Windows-only)")
@@ -106,10 +107,24 @@ def matrix_cmd(
                 continue
             console.print(f"  RUN  {scenario.scenario_id} … ", end="")
             result = run_scenario(scenario, save_artifact=True, artifact_dir=Path(output))
-            status = "[green]OK[/green]" if result.exit_code == 0 else "[red]FAIL[/red]"
-            console.print(f"{status} (exit={result.exit_code})")
+            if result.exit_code == 0:
+                console.print("[green]OK[/green] (exit=0)")
+            else:
+                console.print(f"[red]FAIL[/red] (exit={result.exit_code})")
+                failed.append(scenario.scenario_id)
+                if result.stderr_text:
+                    for line in result.stderr_text.strip().splitlines():
+                        console.print(f"        [dim]{line}[/dim]")
             executed += 1
-        console.print(f"\nDone: {executed} run, {skipped} skipped.")
+        passed = executed - len(failed)
+        console.print(
+            f"\nDone: {executed} run, {passed} passed, {len(failed)} failed, {skipped} skipped."
+        )
+        if failed:
+            console.print("\n[red]Failed scenarios:[/red]")
+            for sid in failed:
+                console.print(f"  • {sid}")
+            raise typer.Exit(1)
     else:
         console.print(f"[red]Unknown action:[/red] {action}")
         raise typer.Exit(1)
