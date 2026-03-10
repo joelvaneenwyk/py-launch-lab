@@ -15,11 +15,11 @@ Extend the test matrix to cover all `uv` and `uvw` launch modes. This includes `
 
 ## Tasks
 
-- [ ] Run scenarios for `uv run script.py`, `uv run script.pyw`, `uv run --gui-script`
-- [ ] Run scenarios for `uvx` and `uv tool run`
-- [ ] Run `uv tool install` for console and GUI fixture packages
-- [ ] Integration tests: `test_uv_run.py`, `test_uv_tool_install.py`, `test_uvx.py`, `test_uvw.py`
-- [ ] Populate `artifacts/json/` with per-scenario result JSON
+- [x] Run scenarios for `uv run script.py`, `uv run script.pyw`, `uv run --gui-script`
+- [x] Run scenarios for `uvx` and `uv tool run`
+- [x] Run `uv tool install` for console and GUI fixture packages
+- [x] Integration tests: `test_uv_run.py`, `test_uv_tool_install.py`, `test_uvx.py`, `test_uvw.py`
+- [x] Populate `artifacts/json/` with per-scenario result JSON
 
 ## Related Issues
 
