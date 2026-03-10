@@ -39,6 +39,17 @@ jobs:
         run: uv run py-launch-lab report build --findings docs/findings
         continue-on-error: true
 
+      - name: Write job summary
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "artifacts/markdown/report.md" ]; then
+            cat artifacts/markdown/report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "> [!WARNING]" >> "$GITHUB_STEP_SUMMARY"
+            echo "> No scenario report was generated." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Upload JSON artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -83,12 +94,25 @@ jobs:
           toolchain: stable
 
       - name: Build pyshim-win
+        id: build
         working-directory: crates/pyshim-win
         run: cargo build
 
       - name: Run Rust tests
+        id: test
         working-directory: crates/pyshim-win
         run: cargo test
+
+      - name: Write job summary
+        if: always()
+        shell: bash
+        run: |
+          echo "## Rust Shim (pyshim-win) Build Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Step | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | --- |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Build | ${{ steps.build.outcome }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Tests | ${{ steps.test.outcome }} |" >> "$GITHUB_STEP_SUMMARY"
 
   python-tests-ubuntu:
     name: Python tests (Ubuntu — import/schema only)
@@ -109,3 +133,11 @@ jobs:
 
       - name: Run unit tests
         run: uv run pytest tests/ -v --ignore=tests/integration
+
+      - name: Write job summary
+        if: always()
+        shell: bash
+        run: |
+          echo "## Python Tests (Ubuntu) Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Import and schema validation tests on Ubuntu." >> "$GITHUB_STEP_SUMMARY"
