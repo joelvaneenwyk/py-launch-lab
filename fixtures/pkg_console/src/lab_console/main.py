@@ -1,6 +1,8 @@
 """Console entrypoint fixture."""
+
 import sys
 import time
+
 
 def run() -> None:
     print("hello from lab-console", flush=True)

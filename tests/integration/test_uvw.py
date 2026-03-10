@@ -4,7 +4,6 @@ Integration tests: uvw scenarios.
 TODO(M3): Implement.
 """
 
-import shutil
 import sys
 
 import pytest

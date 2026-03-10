@@ -4,10 +4,11 @@ GUI entrypoint fixture.
 Opens a tiny Tkinter window, waits briefly, then exits.
 On non-Windows or headless environments the window step is skipped.
 """
-import sys
-import time
-import tempfile
+
 import pathlib
+import sys
+import tempfile
+import time
 
 
 def run() -> None:

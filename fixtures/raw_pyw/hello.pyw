@@ -1,8 +1,9 @@
 """Minimal GUI-mode script fixture for py-launch-lab (no console output)."""
-import sys
-import time
-import tempfile
+
 import pathlib
+import sys
+import tempfile
+import time
 
 # NOTE: stdout may not be available in pythonw / GUI mode.
 # Write to a temp file instead so the test runner can verify execution.

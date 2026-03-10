@@ -55,3 +55,10 @@ select = ["E", "F", "I", "UP"]
 python_version = "3.11"
 strict = false
 warn_unused_configs = true
+
+[dependency-groups]
+dev = [
+    "mypy>=1.19.1",
+    "pytest>=9.0.2",
+    "ruff>=0.15.5",
+]

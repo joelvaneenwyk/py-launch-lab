@@ -5,7 +5,6 @@ TODO(M3): Implement full uv run observation.
 """
 
 import shutil
-import sys
 
 import pytest
 

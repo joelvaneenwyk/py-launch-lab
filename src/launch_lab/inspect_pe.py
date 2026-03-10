@@ -17,10 +17,10 @@ from typing import BinaryIO
 from launch_lab.models import Subsystem
 
 # PE constants
-_IMAGE_DOS_SIGNATURE = 0x5A4D      # 'MZ'
-_IMAGE_NT_SIGNATURE = 0x00004550   # 'PE\0\0'
-_SUBSYSTEM_CUI = 3                 # Console
-_SUBSYSTEM_GUI = 2                 # Windows GUI
+_IMAGE_DOS_SIGNATURE = 0x5A4D  # 'MZ'
+_IMAGE_NT_SIGNATURE = 0x00004550  # 'PE\0\0'
+_SUBSYSTEM_CUI = 3  # Console
+_SUBSYSTEM_GUI = 2  # Windows GUI
 
 
 def inspect_pe(path: str | Path) -> Subsystem | None:

@@ -3,10 +3,11 @@ Dual-mode fixture: exposes both a console and a GUI entrypoint.
 
 Both entrypoints call shared logic and differ only in how they report results.
 """
-import sys
-import time
-import tempfile
+
 import pathlib
+import sys
+import tempfile
+import time
 
 
 def _shared_work() -> str:

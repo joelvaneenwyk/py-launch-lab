@@ -9,7 +9,6 @@ TODO(M5): Implement full report generation.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 from launch_lab.collect import load_all_results
 from launch_lab.models import ScenarioResult
@@ -20,7 +19,7 @@ _DEFAULT_OUTPUT = Path("artifacts/markdown")
 def build_report(
     json_dir: Path = Path("artifacts/json"),
     output_dir: Path = _DEFAULT_OUTPUT,
-) -> Optional[Path]:
+) -> Path | None:
     """
     Build a Markdown report from collected JSON artifacts.
 
