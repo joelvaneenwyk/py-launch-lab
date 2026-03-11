@@ -82,7 +82,9 @@ details including CI results, see the
 
 ## Current Status
 
-🚧 **M0 — Skeleton complete.** Module stubs, fixtures, Rust crate, and CI skeletons are in place.
+✅ **All milestones (M0–M5) complete.** PE inspection, process spawning with console/window
+detection, full uv/uvw/uvx scenario coverage, Rust shim integration, and CI-driven reporting
+are all implemented and tested.
 
 See [plan.md](plan.md) for milestone details.
 
@@ -136,16 +138,16 @@ Full rendered documentation is available at
 - [CI Findings](https://joelvaneenwyk.github.io/py-launch-lab/findings/report/)
 - [Project Plan](https://joelvaneenwyk.github.io/py-launch-lab/plan/)
 
-## Planned Milestones
+## Milestones
 
 | Milestone | Description | Status |
 |-----------|-------------|--------|
 | M0 | Repo skeleton | ✅ Done |
-| M1 | Static PE inspection | 🔲 Planned |
-| M2 | Python vs PythonW validation | 🔲 Planned |
-| M3 | uv / uvw scenario coverage | 🔲 Planned |
-| M4 | Rust shim integration | 🔲 Planned |
-| M5 | CI artifacts and reporting | 🔲 Planned |
+| M1 | Static PE inspection | ✅ Done |
+| M2 | Python vs PythonW validation | ✅ Done |
+| M3 | uv / uvw scenario coverage | ✅ Done |
+| M4 | Rust shim integration | ✅ Done |
+| M5 | CI artifacts and reporting | ✅ Done |
 
 ## Windows Focus
 
