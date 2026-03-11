@@ -1,0 +1,65 @@
+site_name: Python Launch Lab
+site_url: https://joelvaneenwyk.github.io/py-launch-lab/
+site_description: >-
+  Windows-first conformance and evidence-gathering lab for Python launch modes.
+  Measures how python, pythonw, uv, uvw, and uvx actually behave on Windows.
+
+repo_name: joelvaneenwyk/py-launch-lab
+repo_url: https://github.com/joelvaneenwyk/py-launch-lab
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - navigation.instant
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+    - search.suggest
+    - toc.follow
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  icon:
+    repo: fontawesome/brands/github
+
+nav:
+  - Home: index.md
+  - Architecture: overview.md
+  - Scenario Matrix: scenario-matrix.md
+  - Windows Semantics: windows-launch-semantics.md
+  - Findings: findings/report.md
+  - Project Plan: plan.md
+  - Milestones:
+      - M1 - PE Inspection: issues/m1-static-pe-inspection.md
+      - M2 - Python vs PythonW: issues/m2-python-vs-pythonw-launch.md
+      - M3 - uv/uvw Coverage: issues/m3-uv-uvw-scenario-coverage.md
+      - M4 - Rust Shim: issues/m4-rust-shim-integration.md
+      - M5 - CI & Reporting: issues/m5-ci-artifacts-reporting.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
