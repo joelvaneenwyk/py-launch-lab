@@ -6,7 +6,7 @@ on:
     paths:
       - "docs/**"
       - "README.md"
-      - "plan.md"
+      - "mkdocs.yml"
   workflow_run:
     workflows: ["Windows CI"]
     types: [completed]
@@ -35,10 +35,11 @@ jobs:
       - name: Check Markdown files exist
         run: |
           test -f README.md
-          test -f plan.md
+          test -f docs/plan.md
           test -f docs/overview.md
           test -f docs/windows-launch-semantics.md
           test -f docs/scenario-matrix.md
+          test -f mkdocs.yml
           echo "All docs present."
 
   deploy:
@@ -61,37 +62,19 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true
 
-      - name: Build docs site
-        run: |
-          mkdir -p _site
-          cp README.md _site/index.md
-          cp plan.md _site/plan.md
-          cp -r docs/* _site/
-          # Generate a simple HTML index page
-          cat > _site/index.html <<'EOF'
-          <!DOCTYPE html>
-          <html lang="en">
-          <head>
-            <meta charset="utf-8">
-            <title>Python Launch Lab</title>
-            <style>
-              body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
-              a { color: #0366d6; }
-              ul { line-height: 1.8; }
-            </style>
-          </head>
-          <body>
-            <h1>Python Launch Lab -- Documentation</h1>
-            <ul>
-              <li><a href="overview.md">Architecture Overview</a></li>
-              <li><a href="windows-launch-semantics.md">Windows Launch Semantics</a></li>
-              <li><a href="scenario-matrix.md">Scenario Matrix</a></li>
-              <li><a href="findings/report.md">Findings</a></li>
-              <li><a href="plan.md">Project Plan</a></li>
-            </ul>
-          </body>
-          </html>
-          EOF
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install docs dependencies
+        run: uv sync --extra docs
+
+      - name: Build docs with mkdocs
+        run: uv run mkdocs build --strict
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
@@ -99,7 +82,7 @@ jobs:
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: _site
+          path: site
 
       - name: Deploy to GitHub Pages
         id: deployment
