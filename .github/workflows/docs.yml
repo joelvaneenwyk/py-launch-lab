@@ -6,7 +6,6 @@ on:
     paths:
       - "docs/**"
       - "README.md"
-      - "plan.md"
       - "mkdocs.yml"
   workflow_run:
     workflows: ["Windows CI"]
@@ -36,7 +35,7 @@ jobs:
       - name: Check Markdown files exist
         run: |
           test -f README.md
-          test -f plan.md
+          test -f docs/plan.md
           test -f docs/overview.md
           test -f docs/windows-launch-semantics.md
           test -f docs/scenario-matrix.md
@@ -73,11 +72,6 @@ jobs:
 
       - name: Install docs dependencies
         run: uv sync --extra docs
-
-      - name: Prepare docs sources
-        run: |
-          # Copy root-level files into docs/ so mkdocs can find them
-          cp plan.md docs/plan.md
 
       - name: Build docs with mkdocs
         run: uv run mkdocs build --strict

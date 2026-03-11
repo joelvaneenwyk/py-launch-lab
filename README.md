@@ -28,35 +28,35 @@ details including CI results, see the
 
 | Scenario | Command | Subsystem | Spawns Terminal? | stdout/stderr | Notes |
 |----------|---------|-----------|-----------------|---------------|-------|
-| `python-script-py` | `python hello.py` | CUI | Yes | Available | Standard console launch |
-| `python-script-pyw` | `python hello.pyw` | CUI | Yes | Available | py launcher may invoke pythonw (Windows-only) |
-| `pythonw-script-py` | `pythonw hello.py` | GUI | No | Unavailable | GUI subsystem, no console window (Windows-only) |
-| `pythonw-script-pyw` | `pythonw hello.pyw` | GUI | No | Unavailable | GUI subsystem, no console window (Windows-only) |
+| `python-script-py` | `python fixtures/raw_py/hello.py` | CUI | Yes | Available | Standard console launch |
+| `python-script-pyw` | `python fixtures/raw_pyw/hello.pyw` | CUI | Yes | Available | Running .pyw via python.exe still uses console subsystem (Windows-only) |
+| `pythonw-script-py` | `pythonw fixtures/raw_py/hello.py` | GUI | No | Unavailable | GUI subsystem, no console window (Windows-only) |
+| `pythonw-script-pyw` | `pythonw fixtures/raw_pyw/hello.pyw` | GUI | No | Unavailable | GUI subsystem, no console window (Windows-only) |
 
 ### uv / uvw
 
 | Scenario | Command | Subsystem | Spawns Terminal? | stdout/stderr | Notes |
 |----------|---------|-----------|-----------------|---------------|-------|
-| `uv-run-script-py` | `uv run hello.py` | CUI | Yes | Available | uv is a CUI executable |
-| `uv-run-script-pyw` | `uv run hello.pyw` | CUI | Yes | Available | uv runs .pyw with python, not pythonw |
-| `uv-run-gui-script` | `uv run --gui-script hello.py` | GUI | No | Unavailable | Uses GUI subsystem launcher (Windows-only) |
-| `uvw-run-script-py` | `uvw run hello.py` | GUI | No | Unavailable | uvw is the GUI counterpart of uv (Windows-only) |
+| `uv-run-script-py` | `uv run fixtures/raw_py/hello.py` | CUI | Yes | Available | uv is a CUI executable |
+| `uv-run-script-pyw` | `uv run fixtures/raw_pyw/hello.pyw` | CUI | Yes | Available | uv runs .pyw with python, not pythonw |
+| `uv-run-gui-script` | `uv run --gui-script fixtures/raw_py/hello.py` | GUI | No | Unavailable | Uses GUI subsystem launcher (Windows-only) |
+| `uvw-run-script-py` | `uvw run fixtures/raw_py/hello.py` | GUI | No | Unavailable | uvw is the GUI counterpart of uv (Windows-only) |
 
 ### uvx / uv tool
 
 | Scenario | Command | Subsystem | Spawns Terminal? | stdout/stderr | Notes |
 |----------|---------|-----------|-----------------|---------------|-------|
-| `uvx-pkg-console` | `uvx --from pkg lab-console` | CUI | Yes | Available | Tool run with console entrypoint |
-| `uv-tool-run-pkg-console` | `uv tool run --from pkg lab-console` | CUI | Yes | Available | Equivalent to uvx |
-| `uv-tool-install-console` | `uv tool install pkg_console` | CUI | Yes | Available | Installed console entrypoint |
-| `uv-tool-install-gui` | `uv tool install pkg_gui` | GUI | No | Unavailable | Installed GUI entrypoint (Windows-only) |
+| `uvx-pkg-console` | `uvx --from fixtures/pkg_console lab-console` | CUI | Yes | Available | Tool run with console entrypoint |
+| `uv-tool-run-pkg-console` | `uv tool run --from fixtures/pkg_console lab-console` | CUI | Yes | Available | Equivalent to uvx |
+| `uv-tool-install-console` | `uv tool install --editable fixtures/pkg_console` | CUI | Yes | Available | Installed console entrypoint |
+| `uv-tool-install-gui` | `uv tool install --editable fixtures/pkg_gui` | GUI | No | Unavailable | Installed GUI entrypoint (Windows-only) |
 
 ### Rust Shim (`pyshim-win`)
 
 | Scenario | Command | Subsystem | Spawns Terminal? | stdout/stderr | Notes |
 |----------|---------|-----------|-----------------|---------------|-------|
-| `shim-python-script-py` | `pyshim-win --hide-console -- python hello.py` | GUI | No | Forwarded | GUI shim hides console (Windows-only) |
-| `shim-uv-run-script-py` | `pyshim-win --hide-console -- uv run hello.py` | GUI | No | Forwarded | GUI shim wrapping uv (Windows-only) |
+| `shim-python-script-py` | `pyshim-win --hide-console -- python fixtures/raw_py/hello.py` | GUI | No | Forwarded | GUI shim hides console (Windows-only) |
+| `shim-uv-run-script-py` | `pyshim-win --hide-console -- uv run fixtures/raw_py/hello.py` | GUI | No | Forwarded | GUI shim wrapping uv (Windows-only) |
 
 ### Key Terminology
 
@@ -86,7 +86,7 @@ details including CI results, see the
 detection, full uv/uvw/uvx scenario coverage, Rust shim integration, and CI-driven reporting
 are all implemented and tested.
 
-See [plan.md](plan.md) for milestone details.
+See [docs/plan.md](docs/plan.md) for milestone details.
 
 ## Directory Map
 
