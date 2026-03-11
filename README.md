@@ -82,7 +82,7 @@ details including CI results, see the
 
 ## Current Status
 
-🚧 **M0 -- Skeleton complete.** Module stubs, fixtures, Rust crate, and CI skeletons are in place.
+🚧 **M0 — Skeleton complete.** Module stubs, fixtures, Rust crate, and CI skeletons are in place.
 
 See [plan.md](plan.md) for milestone details.
 
