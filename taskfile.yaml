@@ -58,7 +58,7 @@ tasks:
   env-info:
     desc: Print environment info (OS, Python, uv versions)
     cmds:
-      - uv run python -c "import platform; print(f'OS:{' '}  {platform.platform()}')"
+      - uv run python -c "import platform; print('OS:', platform.platform())"
       - uv run python --version
       - uv --version
 
