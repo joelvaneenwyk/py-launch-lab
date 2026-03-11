@@ -150,6 +150,92 @@ _SCENARIOS: list[Scenario] = [
         requires_uv=True,
         windows_only=True,
     ),
+    # --- venv-direct scenarios ---
+    # These scenarios require a dynamically-created virtual environment and are
+    # therefore skipped by the matrix runner.  The corresponding integration
+    # tests (tests/integration/test_venv.py) create a temporary venv, install
+    # fixture packages, and exercise the generated executables directly.
+    Scenario(
+        scenario_id="venv-python-script-py",
+        launcher="venv-direct",
+        mode="venv python script.py",
+        fixture="raw_py",
+        args=[],  # populated dynamically by test
+        description=(
+            "Run hello.py via the venv's python executable. "
+            "On Windows the venv python.exe is a CUI copy/symlink; "
+            "it should produce a console window and stdout."
+        ),
+        skip_reason="Requires dynamic venv setup (see tests/integration/test_venv.py)",
+    ),
+    Scenario(
+        scenario_id="venv-pythonw-script-py",
+        launcher="venv-direct",
+        mode="venv pythonw script.py",
+        fixture="raw_py",
+        args=[],
+        description=(
+            "Run hello.py via the venv's pythonw executable. "
+            "On Windows the venv pythonw.exe is a GUI-subsystem copy/symlink; "
+            "it should NOT produce a console window."
+        ),
+        windows_only=True,
+        skip_reason="Requires dynamic venv setup (see tests/integration/test_venv.py)",
+    ),
+    Scenario(
+        scenario_id="venv-console-entrypoint",
+        launcher="venv-direct",
+        mode="venv project.scripts entrypoint",
+        fixture="pkg_console",
+        args=[],
+        description=(
+            "Install pkg_console (project.scripts) into a venv and run the "
+            "generated console-script wrapper. On Windows the wrapper is a "
+            "CUI .exe that should create a console window."
+        ),
+        skip_reason="Requires dynamic venv setup (see tests/integration/test_venv.py)",
+    ),
+    Scenario(
+        scenario_id="venv-gui-entrypoint",
+        launcher="venv-direct",
+        mode="venv project.gui-scripts entrypoint",
+        fixture="pkg_gui",
+        args=[],
+        description=(
+            "Install pkg_gui (project.gui-scripts) into a venv and run the "
+            "generated GUI-script wrapper. On Windows the wrapper is a "
+            "GUI .exe (no console window)."
+        ),
+        windows_only=True,
+        skip_reason="Requires dynamic venv setup (see tests/integration/test_venv.py)",
+    ),
+    Scenario(
+        scenario_id="venv-dual-console-entrypoint",
+        launcher="venv-direct",
+        mode="venv dual project.scripts entrypoint",
+        fixture="pkg_dual",
+        args=[],
+        description=(
+            "Install pkg_dual (project.scripts + project.gui-scripts) into a "
+            "venv and run the console entrypoint. On Windows the wrapper is a "
+            "CUI .exe."
+        ),
+        skip_reason="Requires dynamic venv setup (see tests/integration/test_venv.py)",
+    ),
+    Scenario(
+        scenario_id="venv-dual-gui-entrypoint",
+        launcher="venv-direct",
+        mode="venv dual project.gui-scripts entrypoint",
+        fixture="pkg_dual",
+        args=[],
+        description=(
+            "Install pkg_dual (project.scripts + project.gui-scripts) into a "
+            "venv and run the GUI entrypoint. On Windows the wrapper is a "
+            "GUI .exe (no console window)."
+        ),
+        windows_only=True,
+        skip_reason="Requires dynamic venv setup (see tests/integration/test_venv.py)",
+    ),
     # --- Shim-wrapped variants ---
     Scenario(
         scenario_id="shim-python-script-py",
