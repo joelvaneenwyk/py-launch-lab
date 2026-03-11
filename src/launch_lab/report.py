@@ -69,19 +69,28 @@ def _render_header(results: list[ScenarioResult]) -> list[str]:
     failed = sum(1 for r in results if r.exit_code is not None and r.exit_code != 0)
     unknown = sum(1 for r in results if r.exit_code is None)
     platforms = sorted({r.platform for r in results})
+    os_versions = sorted({r.os_version for r in results if r.os_version})
+    python_versions = sorted({r.python_version for r in results})
+    uv_versions = sorted({r.uv_version for r in results if r.uv_version})
 
     lines = [
-        "# Python Launch Lab — Results",
+        "# Python Launch Lab -- Results",
         "",
         "## Summary",
         "",
         f"- **Total scenarios:** {len(results)}",
         f"- **Passed (exit 0):** {passed}",
-        f"- **Failed (exit ≠ 0):** {failed}",
+        f"- **Failed (exit != 0):** {failed}",
         f"- **Unknown (no exit code):** {unknown}",
         f"- **Platforms:** {', '.join(platforms)}",
-        "",
     ]
+    if os_versions:
+        lines.append(f"- **OS:** {', '.join(os_versions)}")
+    if python_versions:
+        lines.append(f"- **Python:** {', '.join(python_versions)}")
+    if uv_versions:
+        lines.append(f"- **uv:** {', '.join(uv_versions)}")
+    lines.append("")
     return lines
 
 

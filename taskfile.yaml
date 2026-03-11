@@ -4,6 +4,7 @@ version: "3"
 vars:
   PYTHON: uv run python
   PKG: launch_lab
+  UV_VERSION: '{{.UV_VERSION | default "latest"}}'
 
 tasks:
   default:
@@ -16,6 +17,12 @@ tasks:
     desc: Install the project in development mode
     cmds:
       - uv sync --extra dev
+
+  install-uv:
+    desc: Install a specific version of uv (set UV_VERSION=x.y.z)
+    cmds:
+      - cmd: echo "Installing uv {{.UV_VERSION}}..."
+      - cmd: 'pip install {{if eq .UV_VERSION "latest"}}uv{{else}}uv=={{.UV_VERSION}}{{end}}'
 
   lint:
     desc: Run ruff linter
@@ -47,6 +54,13 @@ tasks:
     desc: Run all tests
     cmds:
       - uv run pytest tests/ -v
+
+  env-info:
+    desc: Print environment info (OS, Python, uv versions)
+    cmds:
+      - uv run python -c "import platform; print(f'OS:{' '}  {platform.platform()}')"
+      - uv run python --version
+      - uv --version
 
   run:
     desc: Run the CLI

@@ -143,3 +143,24 @@ def test_html_report_is_self_contained():
     assert "stylesheet" not in html.lower()
     assert "<link rel=" not in html.lower()
     assert "<script src=" not in html.lower()
+
+
+def test_html_report_includes_os_version():
+    results = [_make_result(exit_code=0, os_version="Windows-10-10.0.22631-SP0")]
+    html = _render_html_report(results)
+    assert "Windows-10-10.0.22631-SP0" in html
+    assert "OS:" in html
+
+
+def test_html_report_includes_python_version():
+    results = [_make_result(exit_code=0, python_version="3.12.3")]
+    html = _render_html_report(results)
+    assert "Python:" in html
+    assert "3.12.3" in html
+
+
+def test_html_report_includes_uv_version():
+    results = [_make_result(exit_code=0, uv_version="uv 0.7.12")]
+    html = _render_html_report(results)
+    assert "uv:" in html
+    assert "uv 0.7.12" in html

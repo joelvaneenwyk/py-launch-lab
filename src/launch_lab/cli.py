@@ -84,11 +84,26 @@ def matrix_cmd(
         import sys as _sys
 
         from launch_lab.matrix import get_matrix
-        from launch_lab.runner import is_uv_available, run_scenario
+        from launch_lab.runner import (
+            _os_version,
+            _python_version,
+            _uv_version,
+            is_uv_available,
+            run_scenario,
+        )
 
         matrix = get_matrix()
         uv_available = is_uv_available()
-        console.print(f"Running {len(matrix)} scenarios …")
+
+        # Print environment info
+        console.print("[bold]Environment[/bold]")
+        console.print(f"  OS:     {_os_version()}")
+        console.print(f"  Python: {_python_version()}")
+        uv_ver = _uv_version()
+        console.print(f"  uv:     {uv_ver or 'not available'}")
+        console.print("")
+
+        console.print(f"Running {len(matrix)} scenarios ...")
         executed = 0
         skipped = 0
         failed: list[str] = []

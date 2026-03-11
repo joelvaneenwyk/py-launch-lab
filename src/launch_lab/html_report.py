@@ -183,6 +183,9 @@ def _render_html_report(results: list[ScenarioResult]) -> str:
     failed = sum(1 for r in results if r.exit_code is not None and r.exit_code != 0)
     unknown = sum(1 for r in results if r.exit_code is None)
     platforms = sorted({r.platform for r in results})
+    os_versions = sorted({r.os_version for r in results if r.os_version})
+    python_versions = sorted({r.python_version for r in results})
+    uv_versions = sorted({r.uv_version for r in results if r.uv_version})
     timestamp = datetime.now(tz=UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
 
     parts: list[str] = []
@@ -198,8 +201,15 @@ def _render_html_report(results: list[ScenarioResult]) -> str:
 
     # Header
     parts.append("<h1>Python Launch Lab -- Results</h1>")
-    parts.append(f'<p class="timestamp">Generated {_esc(timestamp)}'
-                 f" | Platforms: {_esc(', '.join(platforms))}</p>")
+    env_parts = [f"Generated {_esc(timestamp)}",
+                 f"Platforms: {_esc(', '.join(platforms))}"]
+    if os_versions:
+        env_parts.append(f"OS: {_esc(', '.join(os_versions))}")
+    if python_versions:
+        env_parts.append(f"Python: {_esc(', '.join(python_versions))}")
+    if uv_versions:
+        env_parts.append(f"uv: {_esc(', '.join(uv_versions))}")
+    parts.append(f'<p class="timestamp">{" | ".join(env_parts)}</p>')
 
     # Summary cards
     parts.append('<div class="summary-cards">')

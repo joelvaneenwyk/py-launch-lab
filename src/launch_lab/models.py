@@ -59,6 +59,10 @@ class ScenarioResult(BaseModel):
     # Identity
     scenario_id: str = Field(..., description="Unique identifier for the scenario.")
     platform: str = Field(..., description="sys.platform value (e.g. 'win32', 'linux').")
+    os_version: str | None = Field(
+        None,
+        description="Detailed OS version string (e.g. 'Windows-10-10.0.22631-SP0').",
+    )
     python_version: str = Field(..., description="Python version string (e.g. '3.12.3').")
     uv_version: str | None = Field(None, description="uv version string if available.")
 
