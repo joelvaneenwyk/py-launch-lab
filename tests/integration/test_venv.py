@@ -248,13 +248,13 @@ class TestVenvPythonW:
     def test_venv_pythonw_runs_script(self, venv_dir: Path) -> None:
         """pythonw should be able to run a script (no stdout expected)."""
         pythonw = venv_dir / _SCRIPTS_DIR / "pythonw.exe"
-        script = _FIXTURES / "raw_pyw" / "hello.pyw"
+        script = _FIXTURES / "raw_py" / "hello.py"
         scenario = _make_venv_scenario(
-            "venv-pythonw-script-pyw",
+            "venv-pythonw-script-py",
             str(pythonw),
             [str(script)],
-            fixture="raw_pyw",
-            description="venv pythonw hello.pyw",
+            fixture="raw_py",
+            description="venv pythonw hello.py",
         )
         result = run_scenario(scenario, timeout=15)
         assert result.exit_code == 0
@@ -430,7 +430,7 @@ class TestVenvGuiEntrypoint:
             )
 
     def test_gui_entrypoint_non_windows(self, venv_with_packages: Path) -> None:
-        """On non-Windows, GUI entrypoints are plain scripts (no .exe wrapper)."""
+        """On non-Windows, GUI entrypoints are plain scripts that run successfully."""
         if _IS_WINDOWS:
             pytest.skip("Only meaningful on non-Windows")
         # On Linux/macOS pip installs gui-scripts as plain scripts (no .exe),
@@ -440,6 +440,16 @@ class TestVenvGuiEntrypoint:
             f"GUI entrypoint script not found: {wrapper}. "
             "On non-Windows pip should still create a script for gui-scripts."
         )
+        # Execute the script and verify it exits cleanly.
+        scenario = _make_venv_scenario(
+            "venv-gui-entrypoint-nix",
+            str(wrapper),
+            [],
+            fixture="pkg_gui",
+            description="venv GUI entrypoint on non-Windows",
+        )
+        result = run_scenario(scenario, timeout=15)
+        assert result.exit_code == 0
 
 
 # ===================================================================
@@ -544,11 +554,25 @@ class TestVenvDualEntrypoints:
         if result.console_window_detected is not None:
             assert result.console_window_detected is False
 
-    def test_dual_non_windows_both_exist(self, venv_with_packages: Path) -> None:
-        """On non-Windows, both entrypoints should exist as plain scripts."""
+    def test_dual_non_windows_both_run(self, venv_with_packages: Path) -> None:
+        """On non-Windows, both entrypoints should exist and execute cleanly."""
         if _IS_WINDOWS:
             pytest.skip("Only meaningful on non-Windows")
         console_ep = venv_with_packages / _SCRIPTS_DIR / "lab-dual-console"
         gui_ep = venv_with_packages / _SCRIPTS_DIR / "lab-dual-gui"
         assert console_ep.is_file(), f"Dual console script not found: {console_ep}"
         assert gui_ep.is_file(), f"Dual GUI script not found: {gui_ep}"
+
+        # Execute both entrypoints and verify they exit cleanly.
+        for name, path in [("console", console_ep), ("gui", gui_ep)]:
+            scenario = _make_venv_scenario(
+                f"venv-dual-{name}-entrypoint-nix",
+                str(path),
+                [],
+                fixture="pkg_dual",
+                description=f"venv dual-package {name} entrypoint on non-Windows",
+            )
+            result = run_scenario(scenario, timeout=15)
+            assert result.exit_code == 0, (
+                f"Dual {name} entrypoint failed with exit code {result.exit_code}"
+            )
