@@ -15,6 +15,7 @@ defaults (None / empty list) on non-Windows platforms.
 
 from __future__ import annotations
 
+import platform
 import shutil
 import subprocess
 import sys
@@ -31,6 +32,11 @@ from launch_lab.detect_windows import (
 from launch_lab.inspect_pe import inspect_pe
 from launch_lab.matrix import Scenario
 from launch_lab.models import LauncherKind, ScenarioResult
+
+
+def _os_version() -> str:
+    """Return a detailed OS version string (e.g. 'Windows-10-10.0.22631-SP0')."""
+    return platform.platform()
 
 
 def _python_version() -> str:
@@ -78,7 +84,7 @@ def run_scenario(
     When *save_artifact* is True the result JSON is written to *artifact_dir*
     (defaults to ``artifacts/json/``).
     """
-    uv_ver = _uv_version() if scenario.requires_uv else None
+    uv_ver = _uv_version()
 
     cmd = _build_command(scenario)
 
@@ -149,6 +155,7 @@ def run_scenario(
     result = ScenarioResult(
         scenario_id=scenario.scenario_id,
         platform=sys.platform,
+        os_version=_os_version(),
         python_version=_python_version(),
         uv_version=uv_ver,
         launcher=_parse_launcher(scenario.launcher),

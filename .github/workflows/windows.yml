@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      uv-version:
+        description: "uv version to test (e.g. '0.7.12'). Leave empty for latest."
+        required: false
+        default: ""
+        type: string
 
 jobs:
   python-tests:
@@ -17,9 +24,20 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+          version: ${{ github.event.inputs.uv-version || 'latest' }}
 
       - name: Set up Python
         run: uv python install 3.12
+
+      - name: Print environment info
+        shell: bash
+        run: |
+          echo "## Environment" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **OS:** $(uname -a)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Python:** $(uv run python --version)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **uv:** $(uv --version)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Install dependencies
         run: uv sync --extra dev
@@ -124,6 +142,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+          version: ${{ github.event.inputs.uv-version || 'latest' }}
 
       - name: Set up Python
         run: uv python install 3.12
@@ -139,5 +158,7 @@ jobs:
         shell: bash
         run: |
           echo "## Python Tests (Ubuntu) Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **uv:** $(uv --version)" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "Import and schema validation tests on Ubuntu." >> "$GITHUB_STEP_SUMMARY"

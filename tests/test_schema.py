@@ -66,6 +66,7 @@ def test_result_json_roundtrip():
 
 def test_result_optional_fields_default_to_none():
     r = _make_result()
+    assert r.os_version is None
     assert r.uv_version is None
     assert r.pe_subsystem is None
     assert r.exit_code is None

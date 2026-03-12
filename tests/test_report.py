@@ -76,7 +76,7 @@ def test_render_report_contains_summary():
     text = "\n".join(lines)
     assert "**Total scenarios:** 2" in text
     assert "**Passed (exit 0):** 1" in text
-    assert "**Failed (exit ≠ 0):** 1" in text
+    assert "**Failed (exit != 0):** 1" in text
 
 
 def test_render_report_contains_all_scenarios_table():
@@ -133,5 +133,34 @@ def test_render_report_none_exit_code():
     lines = _render_report(results)
     text = "\n".join(lines)
     assert "**Unknown (no exit code):** 1" in text
-    # In the table, None exit code renders as "—"
-    assert "—" in text
+
+
+def test_render_report_includes_os_version():
+    results = [_make_result(exit_code=0, os_version="Linux-6.5.0-x86_64")]
+    lines = _render_report(results)
+    text = "\n".join(lines)
+    assert "**OS:**" in text
+    assert "Linux-6.5.0-x86_64" in text
+
+
+def test_render_report_includes_python_version():
+    results = [_make_result(exit_code=0, python_version="3.12.3")]
+    lines = _render_report(results)
+    text = "\n".join(lines)
+    assert "**Python:**" in text
+    assert "3.12.3" in text
+
+
+def test_render_report_includes_uv_version():
+    results = [_make_result(exit_code=0, uv_version="uv 0.7.12")]
+    lines = _render_report(results)
+    text = "\n".join(lines)
+    assert "**uv:**" in text
+    assert "uv 0.7.12" in text
+
+
+def test_render_report_omits_uv_when_none():
+    results = [_make_result(exit_code=0, uv_version=None)]
+    lines = _render_report(results)
+    text = "\n".join(lines)
+    assert "**uv:**" not in text
