@@ -40,7 +40,11 @@ py-launch-lab report build
 - **[Architecture Overview](overview.md)** -- Components and data flow
 - **[Scenario Matrix](scenario-matrix.md)** -- All test scenarios with expected behavior
 - **[Windows Launch Semantics](windows-launch-semantics.md)** -- CUI vs GUI, console attachment, creation flags
+- **[Implementation Guide](implementation.md)** -- How detection, reporting, and AI integration work
+- **[Detection Deep Dive](detection-deep-dive.md)** -- Low-level Windows process and window detection
+- **[Findings & Anomalies](findings/anomalies.md)** -- What we found, root causes, upstream issues
 - **[CI Findings](findings/report.md)** -- Latest results from CI runs
+- **[Development History](development-history.md)** -- What worked, what didn't, and why
 - **[Project Plan](plan.md)** -- Milestones and roadmap
 
 ## Source Code
