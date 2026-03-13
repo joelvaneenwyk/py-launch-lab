@@ -2,6 +2,7 @@
 CLI entrypoint for py-launch-lab.
 
 Commands:
+    py-launch-lab setup-uv <source>       — build/resolve a custom uv binary
     py-launch-lab probe <executable>      — probe a binary (terminal detection)
     py-launch-lab scenario run <scenario-id>
     py-launch-lab matrix run
@@ -20,7 +21,7 @@ import typer
 from rich.console import Console
 
 from launch_lab import __version__
-from launch_lab.uv_provider import get_custom_uv_source, setup_custom_uv
+from launch_lab.uv_provider import get_custom_uv_source, get_uv_binary, setup_custom_uv
 
 app = typer.Typer(
     name="py-launch-lab",
@@ -82,6 +83,83 @@ def main(
     if version:
         console.print(f"py-launch-lab {__version__}")
         raise typer.Exit()
+
+
+@app.command("setup-uv")
+def setup_uv_cmd(
+    source: str = typer.Argument(
+        ...,
+        help=(
+            "Custom uv source: a path to a uv binary, a local Rust source "
+            "directory, or a git URL (e.g. https://github.com/joelvaneenwyk/uv)."
+        ),
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Force a fresh build even if a cached binary already exists.",
+    ),
+) -> None:
+    """Build or resolve a custom uv binary ahead of time.
+
+    Run this before ``pytest`` or ``matrix run`` so that the (potentially
+    slow) clone + cargo build step is clearly visible instead of making
+    tests look like they hang.
+
+    Examples:
+
+        py-launch-lab setup-uv https://github.com/joelvaneenwyk/uv
+
+        py-launch-lab setup-uv ./path/to/local/uv-checkout
+
+        py-launch-lab setup-uv C:/builds/uv.exe
+    """
+    from launch_lab.uv_provider import resolve_cached_custom_uv
+
+    _setup_logging(verbose=True)
+
+    if not force:
+        cached = resolve_cached_custom_uv(source)
+        if cached is not None:
+            console.print(f"[green]Custom uv already built:[/green] {cached}")
+            _print_uv_version(cached)
+            return
+
+    console.print(f"[bold]Setting up custom uv from:[/bold] {source}")
+    console.print("This may take several minutes for git sources (clone + cargo build)…")
+    console.print("")
+    try:
+        uv_bin = setup_custom_uv(source)
+    except RuntimeError as exc:
+        console.print(f"\n[red]Setup failed:[/red] {exc}")
+        raise typer.Exit(1) from exc
+
+    console.print("")
+    console.print(f"[green]Custom uv ready:[/green] {uv_bin}")
+    _print_uv_version(uv_bin)
+    console.print("")
+    console.print(
+        "[dim]Tip: set [bold]CUSTOM_UV[/bold] env var to this source value so "
+        "that pytest and matrix-run pick it up automatically.[/dim]"
+    )
+
+
+def _print_uv_version(uv_bin: str) -> None:
+    """Print the version of a uv binary."""
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            [uv_bin, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            console.print(f"  version: {result.stdout.strip()}")
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
 
 
 @scenario_app.command("run")

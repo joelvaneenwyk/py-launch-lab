@@ -92,6 +92,11 @@ def get_uv_binary(name: str = "uv") -> str:
 def setup_custom_uv(source: str) -> str:
     """Resolve *source* to a directory of uv binaries and configure it globally.
 
+    This is the **full** setup path: it will clone git repos, pull updates,
+    and run ``cargo build --release`` as needed.  For long-running builds,
+    use this via the ``py-launch-lab setup-uv`` CLI command so that
+    progress is visible.
+
     Parameters
     ----------
     source:
@@ -128,6 +133,48 @@ def setup_custom_uv(source: str) -> str:
     uv_bin = get_uv_binary("uv")
     logger.info("Custom uv configured: %s", uv_bin)
     return uv_bin
+
+
+def resolve_cached_custom_uv(source: str) -> str | None:
+    """Try to configure a custom uv from *source* **without** building.
+
+    This is the lightweight counterpart of :func:`setup_custom_uv`.  It
+    checks whether a previously-built binary already exists in the cache
+    (for git URLs) or on disk (for local paths) and configures the
+    provider if so.  No git clone, git pull, or cargo build is triggered.
+
+    Returns the resolved ``uv`` binary path on success, or ``None`` if
+    no cached/existing binary could be found.
+    """
+    global _custom_uv_dir, _custom_uv_source  # noqa: PLW0603
+
+    source_path = Path(source)
+
+    resolved_dir: Path | None = None
+
+    if _is_git_url(source):
+        resolved_dir = _resolve_git_source_cached(source)
+    elif source_path.is_file():
+        resolved_dir = source_path.resolve().parent
+    elif source_path.is_dir():
+        # Check for existing binary in a build output or the dir itself
+        target_release = source_path.resolve() / "target" / "release"
+        uv_candidate = target_release / f"uv{_EXE_SUFFIX}"
+        if uv_candidate.is_file():
+            resolved_dir = target_release
+        else:
+            uv_in_dir = source_path.resolve() / f"uv{_EXE_SUFFIX}"
+            if uv_in_dir.is_file():
+                resolved_dir = source_path.resolve()
+
+    if resolved_dir is not None:
+        _custom_uv_dir = resolved_dir
+        _custom_uv_source = source
+        uv_bin = get_uv_binary("uv")
+        logger.info("Custom uv configured from cache: %s", uv_bin)
+        return uv_bin
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -178,6 +225,21 @@ def _resolve_git_source(url: str) -> Path:
         _git_clone(url, clone_dir)
 
     return _cargo_build(clone_dir)
+
+
+def _resolve_git_source_cached(url: str) -> Path | None:
+    """Return the cached build output directory for a git URL, if it exists.
+
+    Does **not** clone, pull, or build — only checks the cache.
+    """
+    url_hash = hashlib.sha256(url.encode()).hexdigest()[:12]
+    clone_dir = _CACHE_DIR / url_hash
+    target_dir = clone_dir / "target" / "release"
+    uv_bin = target_dir / f"uv{_EXE_SUFFIX}"
+    if uv_bin.is_file():
+        logger.info("Found cached custom uv build: %s", uv_bin)
+        return target_dir
+    return None
 
 
 def _git_clone(url: str, dest: Path) -> None:
@@ -268,14 +330,21 @@ def auto_configure_from_env() -> None:
     This is called automatically on module import so that tests running
     under ``CUSTOM_UV=... uv run pytest`` pick up the custom binary
     without needing explicit CLI flags.
+
+    **Important:** This only uses cached/existing binaries — it will never
+    trigger a git clone or cargo build.  Run ``py-launch-lab setup-uv``
+    first to perform the initial build.
     """
     env_value = os.environ.get("CUSTOM_UV", "").strip()
     if env_value:
-        try:
-            setup_custom_uv(env_value)
-        except RuntimeError:
+        result = resolve_cached_custom_uv(env_value)
+        if result is not None:
+            logger.info("Auto-configured custom uv from CUSTOM_UV env var: %s", result)
+        else:
             logger.warning(
-                "CUSTOM_UV environment variable set to %r but could not resolve it; ignoring.",
+                "CUSTOM_UV=%r is set but no cached build was found. "
+                "Run 'py-launch-lab setup-uv %s' first to build it.",
+                env_value,
                 env_value,
             )
 

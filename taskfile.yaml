@@ -5,7 +5,7 @@ vars:
   PYTHON: uv run python
   PKG: launch_lab
   UV_VERSION: '{{.UV_VERSION | default "latest"}}'
-  CUSTOM_UV: '{{.CUSTOM_UV | default ""}}'
+  CUSTOM_UV: '{{.CUSTOM_UV | default "https://github.com/joelvaneenwyk/uv.git"}}'
 
 tasks:
   default:
@@ -14,6 +14,13 @@ tasks:
       - task: test
       - task: matrix-run
       - task: report
+
+  setup-custom-uv:
+    desc: Build/resolve a custom uv binary (set CUSTOM_UV=<path-or-url>)
+    status:
+      - "{{if .CUSTOM_UV}}false{{else}}true{{end}}"
+    cmds:
+      - uv run py-launch-lab setup-uv {{.CUSTOM_UV}}
 
   install:
     desc: Install the project in development mode
@@ -44,6 +51,8 @@ tasks:
 
   test:
     desc: Run unit tests
+    deps:
+      - setup-custom-uv
     cmds:
       - uv run pytest tests/ -v
     env:
@@ -63,6 +72,8 @@ tasks:
 
   matrix-run:
     desc: Run the full scenario matrix
+    deps:
+      - setup-custom-uv
     cmds:
       - uv run py-launch-lab matrix run {{if .CUSTOM_UV}}--custom-uv {{.CUSTOM_UV}}{{end}}
 
