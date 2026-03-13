@@ -43,18 +43,6 @@ tasks:
   test:
     desc: Run unit tests
     cmds:
-      - uv run pytest tests/ -v --ignore=tests/integration
-      - task: test-integration
-
-  test-integration:
-    desc: Run integration tests (Windows only)
-    platforms: [windows]
-    cmds:
-      - uv run pytest tests/integration -v
-
-  test-all:
-    desc: Run all tests
-    cmds:
       - uv run pytest tests/ -v
 
   env-info:
