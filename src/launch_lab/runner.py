@@ -33,6 +33,18 @@ from launch_lab.inspect_pe import inspect_pe
 from launch_lab.matrix import Scenario
 from launch_lab.models import LauncherKind, ScenarioResult
 
+# ---------------------------------------------------------------------------
+# Project paths
+# ---------------------------------------------------------------------------
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_FIXTURES_DIR = _PROJECT_ROOT / "fixtures"
+_CACHE_DIR = _PROJECT_ROOT / ".cache"
+
+_IS_WINDOWS = sys.platform == "win32"
+_SCRIPTS_DIR = "Scripts" if _IS_WINDOWS else "bin"
+_EXE_SUFFIX = ".exe" if _IS_WINDOWS else ""
+
 
 def _os_version() -> str:
     """Return a detailed OS version string (e.g. 'Windows-10-10.0.22631-SP0')."""
@@ -70,6 +82,93 @@ def _parse_launcher(value: str) -> LauncherKind:
         return LauncherKind(value)
     except ValueError:
         return LauncherKind.UNKNOWN
+
+
+# ---------------------------------------------------------------------------
+# Venv provisioning for venv-direct scenarios
+# ---------------------------------------------------------------------------
+
+# Cache to avoid recreating the venv for every scenario in a single run.
+_venv_provisioned: dict[str, Path] = {}
+
+
+def _ensure_matrix_venv() -> Path:
+    """Create (or reuse) a cached venv for ``venv-direct`` matrix scenarios.
+
+    The venv is created in ``.cache/matrix_venv/`` within the project root
+    using ``uv venv``.  All fixture packages (pkg_console, pkg_gui, pkg_dual)
+    are installed into it.
+
+    Returns the venv root directory.
+    """
+    cache_key = "matrix_venv"
+    if cache_key in _venv_provisioned:
+        return _venv_provisioned[cache_key]
+
+    venv_dir = _CACHE_DIR / "matrix_venv"
+    scripts_dir = venv_dir / _SCRIPTS_DIR
+    python_exe = scripts_dir / f"python{_EXE_SUFFIX}"
+
+    # Create the venv if the python executable is missing.
+    if not python_exe.exists():
+        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        subprocess.check_call(["uv", "venv", str(venv_dir)], timeout=60)
+
+    # Install fixture packages (idempotent — uv pip handles re-installs).
+    for pkg in ("pkg_console", "pkg_gui", "pkg_dual"):
+        pkg_path = _FIXTURES_DIR / pkg
+        if pkg_path.exists():
+            subprocess.check_call(
+                [
+                    "uv",
+                    "pip",
+                    "install",
+                    "--python",
+                    str(python_exe),
+                    str(pkg_path),
+                ],
+                timeout=120,
+            )
+
+    _venv_provisioned[cache_key] = venv_dir
+    return venv_dir
+
+
+def _build_venv_command(scenario: Scenario) -> list[str]:
+    """Build the command list for a ``venv-direct`` scenario.
+
+    Provisions the shared matrix venv (if needed) and maps each scenario to
+    the correct executable + arguments.
+    """
+    venv_dir = _ensure_matrix_venv()
+    scripts_dir = venv_dir / _SCRIPTS_DIR
+
+    sid = scenario.scenario_id
+
+    if sid == "venv-python-script-py":
+        exe = str(scripts_dir / f"python{_EXE_SUFFIX}")
+        script = str(_FIXTURES_DIR / "raw_py" / "hello.py")
+        return [exe, script]
+
+    if sid == "venv-pythonw-script-py":
+        exe = str(scripts_dir / f"pythonw{_EXE_SUFFIX}")
+        script = str(_FIXTURES_DIR / "raw_py" / "hello.py")
+        return [exe, script]
+
+    if sid == "venv-console-entrypoint":
+        return [str(scripts_dir / f"lab-console{_EXE_SUFFIX}")]
+
+    if sid == "venv-gui-entrypoint":
+        return [str(scripts_dir / f"lab-gui{_EXE_SUFFIX}")]
+
+    if sid == "venv-dual-console-entrypoint":
+        return [str(scripts_dir / f"lab-dual-console{_EXE_SUFFIX}")]
+
+    if sid == "venv-dual-gui-entrypoint":
+        return [str(scripts_dir / f"lab-dual-gui{_EXE_SUFFIX}")]
+
+    # Fallback: try running with the venv python.
+    return [str(scripts_dir / f"python{_EXE_SUFFIX}"), *scenario.args]
 
 
 def run_scenario(
@@ -208,4 +307,6 @@ def _resolve_launcher(launcher: str) -> str:
 
 def _build_command(scenario: Scenario) -> list[str]:
     """Build the command list for a scenario."""
+    if scenario.launcher == "venv-direct":
+        return _build_venv_command(scenario)
     return [_resolve_launcher(scenario.launcher), *scenario.args]
