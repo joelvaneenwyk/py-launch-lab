@@ -112,4 +112,7 @@ class TestDetectVisibleWindowSubtree:
 
     def test_returns_none_on_non_windows(self):
         """On non-Windows, detect_visible_window always returns None."""
-        assert detect_visible_window(1) is None
+        import launch_lab.detect_windows as dw
+
+        with patch.object(dw, "_IS_WINDOWS", False):
+            assert detect_visible_window(1) is None
