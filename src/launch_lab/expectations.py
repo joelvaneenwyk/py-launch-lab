@@ -195,9 +195,15 @@ EXPECTATIONS: dict[str, ExpectedBehaviour] = {
         stdout_available=False,
         exit_code=0,
         explanation=(
-            "GUI entry-point wrapper in a venv (pip-generated .exe with GUI "
-            "subsystem).  No console should appear; a visible window is expected."
+            "GUI entry-point wrapper in a venv (pip/uv-generated .exe with GUI "
+            "subsystem).  The wrapper itself is GUI, so Windows does not auto-allocate "
+            "a console for it.  However, the wrapper internally launches the venv's "
+            "pythonw.exe — if that binary is a CUI copy (as in uv venvs), a console "
+            "window WILL flash because the child process triggers console allocation.  "
+            "This is a known uv bug where the venv pythonw.exe is not actually "
+            "GUI-subsystem."
         ),
+        doc_url="https://github.com/astral-sh/uv/issues/9781",
     ),
     "venv-dual-console-entrypoint": ExpectedBehaviour(
         pe_subsystem=Subsystem.CUI,
@@ -216,9 +222,11 @@ EXPECTATIONS: dict[str, ExpectedBehaviour] = {
         exit_code=0,
         explanation=(
             "Dual-mode package GUI entry-point.  The GUI wrapper should not "
-            "create a console.  No visible window is expected from the minimal "
-            "test fixture."
+            "create a console.  However, if the venv's pythonw.exe is actually "
+            "a CUI binary (uv venv bug), the child process WILL allocate a "
+            "console window — appearing as an unwanted terminal flash."
         ),
+        doc_url="https://github.com/astral-sh/uv/issues/9781",
     ),
     "venv-python-script-py": ExpectedBehaviour(
         pe_subsystem=Subsystem.CUI,

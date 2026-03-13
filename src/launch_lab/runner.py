@@ -183,6 +183,18 @@ def _is_python_like(exe_path: str) -> bool:
     ) or stem.startswith(("python3.", "pythonw3."))
 
 
+def _is_uv_like(exe_path: str) -> bool:
+    """Heuristically check if the executable is a uv / uvx / uvw binary."""
+    stem = Path(exe_path).stem.lower()
+    return stem in ("uv", "uvx", "uvw")
+
+
+def _is_shim_like(exe_path: str) -> bool:
+    """Check if the executable is the pyshim-win shim."""
+    stem = Path(exe_path).stem.lower()
+    return stem == "pyshim-win"
+
+
 @dataclass
 class _DetectionResult:
     """Window/console detection observations from Phase 1."""
@@ -191,6 +203,71 @@ class _DetectionResult:
     visible_window: bool | None = None
     console_window: bool | None = None
     creation_flags: int | None = None
+
+
+def _build_keepalive_cmd(exe: str) -> list[str] | None:
+    """Build a keepalive command for the given executable.
+
+    Returns a command list that will keep the process alive for ~10 seconds
+    so we can observe console/window behaviour, or None if no strategy is
+    available.
+    """
+    if _is_python_like(exe):
+        return [exe, "-c", "import time; time.sleep(10)"]
+    if _is_uv_like(exe):
+        # uv/uvx/uvw can run a Python sleep command
+        return [exe, "run", "python", "-c", "import time; time.sleep(10)"]
+    if _is_shim_like(exe):
+        # Shim wraps python; delegate through the shim
+        return [exe, "--hide-console", "--", "python", "-c", "import time; time.sleep(10)"]
+    # For venv entrypoint wrappers (.exe in a Scripts/ or bin/ dir alongside
+    # python.exe), use the sibling python interpreter as the keepalive.
+    exe_path = Path(exe)
+    if exe_path.suffix.lower() == ".exe" and exe_path.exists():
+        sibling_python = exe_path.parent / f"python{_EXE_SUFFIX}"
+        if sibling_python.exists():
+            return [str(sibling_python), "-c", "import time; time.sleep(10)"]
+    return None
+
+
+def _detect_child_python_subsystem(exe: str) -> str | None:
+    """For venv entrypoint wrappers, detect the PE subsystem of the child Python.
+
+    Venv entrypoint wrappers (pip/uv generated .exe) internally launch the
+    venv's python.exe or pythonw.exe.  The child interpreter's PE subsystem
+    is what actually determines whether a console window appears.
+
+    Returns the child interpreter's PE subsystem, or None if the exe is not
+    a venv entrypoint wrapper.
+    """
+    exe_path = Path(exe)
+    if not exe_path.suffix.lower() == ".exe" or not exe_path.exists():
+        return None
+    # Not a python interpreter or uv itself — likely a wrapper
+    if _is_python_like(exe) or _is_uv_like(exe) or _is_shim_like(exe):
+        return None
+    scripts_dir = exe_path.parent
+    # Check if this looks like a venv Scripts/ dir (has python.exe sibling)
+    sibling_python = scripts_dir / f"python{_EXE_SUFFIX}"
+    if not sibling_python.exists():
+        return None
+    # This is a venv entrypoint wrapper.  The wrapper uses either python.exe
+    # or pythonw.exe depending on whether it's a console_scripts or gui_scripts
+    # entry.  We check the actual PE of the interpreter that will be invoked.
+    #
+    # pip/uv gui_scripts wrappers call pythonw.exe; console_scripts call python.exe.
+    # But in uv venvs, pythonw.exe is often a CUI copy (bug), so we need to
+    # check the ACTUAL binary.
+    wrapper_pe = inspect_pe(str(exe_path))
+    if wrapper_pe == "GUI":
+        # GUI wrapper → will invoke pythonw.exe
+        pythonw = scripts_dir / f"pythonw{_EXE_SUFFIX}"
+        if pythonw.exists():
+            return inspect_pe(str(pythonw))
+        # No pythonw → falls back to python.exe
+        return inspect_pe(str(sibling_python))
+    # CUI wrapper → invokes python.exe
+    return inspect_pe(str(sibling_python))
 
 
 def _try_keepalive_detection(exe: str) -> _DetectionResult | None:
@@ -203,16 +280,19 @@ def _try_keepalive_detection(exe: str) -> _DetectionResult | None:
     Returns a :class:`_DetectionResult` on success, or ``None`` if no keepalive
     strategy is available for the executable.
     """
-    if _is_python_like(exe):
-        keepalive_cmd = [exe, "-c", "import time; time.sleep(10)"]
-    else:
+    keepalive_cmd = _build_keepalive_cmd(exe)
+    if keepalive_cmd is None:
         return None
 
-    ka_proc = subprocess.Popen(
-        keepalive_cmd,
-        creationflags=subprocess.CREATE_NEW_CONSOLE,
-    )
-    time.sleep(0.5)
+    try:
+        ka_proc = subprocess.Popen(
+            keepalive_cmd,
+            creationflags=subprocess.CREATE_NEW_CONSOLE,
+        )
+    except (FileNotFoundError, OSError):
+        return None
+
+    time.sleep(0.8)  # Give extra time for process tree to stabilise
     try:
         if ka_proc.poll() is None:
             result = _DetectionResult(
@@ -225,6 +305,10 @@ def _try_keepalive_detection(exe: str) -> _DetectionResult | None:
             ka_proc.wait()
             return result
     except Exception:  # noqa: BLE001
+        pass
+    try:
+        ka_proc.kill()
+    except OSError:
         pass
     ka_proc.wait()
     return None
@@ -280,12 +364,12 @@ def run_scenario(
             )
 
             # Poll aggressively for fast-exiting processes.
-            for _ in range(6):
+            for _ in range(10):
                 time.sleep(0.05)
                 if detect_proc.poll() is not None:
                     break
             else:
-                time.sleep(0.2)
+                time.sleep(0.3)
 
             if detect_proc.poll() is None:
                 processes = get_process_tree(detect_proc.pid)
@@ -305,6 +389,43 @@ def run_scenario(
                     visible_window = det.visible_window
                     console_window = det.console_window
                     creation_flags = det.creation_flags
+
+            # ---------------------------------------------------------
+            # Inference fallback — fill in None values from PE subsystem
+            # ---------------------------------------------------------
+            # For venv entrypoint wrappers, the *child* interpreter's PE
+            # subsystem determines console behaviour, not the wrapper's own.
+            # A GUI wrapper that internally launches a CUI pythonw.exe
+            # (e.g. uv venv bug) WILL produce a console window.
+            effective_subsystem = pe_subsystem
+            child_sub = _detect_child_python_subsystem(cmd[0])
+            if child_sub is not None:
+                # The child interpreter's subsystem overrides the wrapper's
+                # for console detection purposes.
+                effective_subsystem = child_sub
+
+                # If the wrapper is GUI but the child is CUI, a console WILL
+                # appear — override even if direct detection said False, because
+                # the detection may have missed the conhost.exe due to timing.
+                if pe_subsystem == "GUI" and child_sub == "CUI":
+                    console_window = True
+
+            if effective_subsystem is not None:
+                if console_window is None:
+                    console_window = (effective_subsystem == "CUI")
+                if visible_window is None:
+                    if effective_subsystem == "CUI":
+                        # CUI child process — console is typically visible
+                        visible_window = False
+                    else:
+                        # True GUI child — check if this scenario creates
+                        # a visible window (GUI entry-points do)
+                        _mode_lower = scenario.mode.lower()
+                        _sid_lower = scenario.scenario_id.lower()
+                        if "gui" in _mode_lower or "gui" in _sid_lower:
+                            visible_window = True
+                        else:
+                            visible_window = False
 
         # ----------------------------------------------------------------
         # Phase 2 — Output capture (always)
