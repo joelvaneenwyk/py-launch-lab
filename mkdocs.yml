@@ -39,7 +39,12 @@ nav:
   - Architecture: overview.md
   - Scenario Matrix: scenario-matrix.md
   - Windows Semantics: windows-launch-semantics.md
-  - Findings: findings/report.md
+  - Implementation Guide: implementation.md
+  - Detection Deep Dive: detection-deep-dive.md
+  - Findings:
+      - CI Results: findings/report.md
+      - Anomalies & Root Causes: findings/anomalies.md
+  - Development History: development-history.md
   - Project Plan: plan.md
   - Milestones:
       - M1 - PE Inspection: issues/m1-static-pe-inspection.md
