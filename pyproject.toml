@@ -66,3 +66,6 @@ dev = [
     "pytest>=9.0.2",
     "ruff>=0.15.5",
 ]
+
+[tool.uv]
+link-mode = "copy"
