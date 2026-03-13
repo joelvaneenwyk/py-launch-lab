@@ -664,6 +664,8 @@ docs = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "mkdocs" },
+    { name = "mkdocs-material" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "ruff" },
@@ -685,6 +687,8 @@ provides-extras = ["dev", "docs"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "mkdocs", specifier = ">=1.6.1" },
+    { name = "mkdocs-material", specifier = ">=9.7.5" },
     { name = "mypy", specifier = ">=1.19.1" },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "ruff", specifier = ">=0.15.5" },
