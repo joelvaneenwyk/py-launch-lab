@@ -72,65 +72,64 @@ def _run_single_test(
     label: str,
     timeout: float = 10.0,
     *,
-    launch_detached: bool = False,
+    capture_output: bool = True,
 ) -> ProbeTest:
     """Run a single probe test and collect observations.
 
-    When *launch_detached* is True on Windows the process is launched with
-    ``CREATE_NEW_CONSOLE`` and without capturing stdout/stderr — mimicking the
-    behaviour of running the executable from the Win+R dialog.  This is the
-    correct mode for observing whether the executable creates a visible window.
-    """
-    result = ProbeTest(label=label, command=cmd)
+    On Windows a *window-detection pass* is always performed first: the command
+    is launched with ``CREATE_NEW_CONSOLE`` and without pipes so that Windows
+    allocates a real console (exactly like Win+R).  When pipes are attached,
+    Windows suppresses new console allocation, so ``detect_visible_window``
+    would always return ``False`` — this pass avoids that.
 
-    # On Windows, bare-execution tests are launched with CREATE_NEW_CONSOLE so
-    # that a new console is allocated (exactly like Win+R) rather than having
-    # the subprocess inherit our pipes.
-    use_detached = launch_detached and _IS_WINDOWS
+    When *capture_output* is ``True`` a second *piped pass* is then run to
+    collect stdout, stderr, and the real exit code.  Set *capture_output* to
+    ``False`` for tests where output is not meaningful (e.g. bare execution).
+    """
+    result = ProbeTest(label=label, command=cmd, output_captured=capture_output)
 
     try:
-        if use_detached:
-            proc = subprocess.Popen(
+        # --------------------------------------------------------------------
+        # Phase 1 — Window detection (Windows only, always)
+        # Launch with CREATE_NEW_CONSOLE so Windows allocates a real console.
+        # Without this, redirected pipes suppress console allocation and
+        # visible_window would always report False for CUI executables.
+        # --------------------------------------------------------------------
+        if _IS_WINDOWS:
+            detect_proc = subprocess.Popen(
                 cmd,
                 creationflags=subprocess.CREATE_NEW_CONSOLE,
                 # No stdout/stderr pipes — the process gets its own console.
             )
-            result.output_captured = False
-        else:
-            proc = subprocess.Popen(
+            # Brief pause to let Windows set up the process tree / console.
+            time.sleep(0.5)
+            if detect_proc.poll() is None:
+                result.processes = get_process_tree(detect_proc.pid)
+                result.visible_window = detect_visible_window(detect_proc.pid)
+                result.console_window = detect_console_host(detect_proc.pid)
+                # Exit code is intentionally not recorded: the process was
+                # killed by the probe so any returncode would be misleading.
+                detect_proc.kill()
+            detect_proc.wait()
+
+        # --------------------------------------------------------------------
+        # Phase 2 — Output capture (optional)
+        # Run again with pipes to collect stdout/stderr and the real exit code.
+        # --------------------------------------------------------------------
+        if capture_output:
+            cap_proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
             )
-
-        # Brief pause to let Windows set up the process tree / console.
-        time.sleep(0.5)
-
-        # Collect observations while the child is still alive.
-        if proc.poll() is None:
-            result.processes = get_process_tree(proc.pid)
-            result.visible_window = detect_visible_window(proc.pid)
-            result.console_window = detect_console_host(proc.pid)
-        else:
-            result.processes = get_process_tree(proc.pid)
-            result.console_window = detect_console_host(proc.pid)
-
-        if use_detached:
-            # Kill the process since we have no pipes to drain.
-            # Exit code is left as None: the process was terminated by the
-            # probe itself so any returncode would be misleading.
-            if proc.poll() is None:
-                proc.kill()
-            proc.wait()
-        else:
             try:
-                out, err = proc.communicate(timeout=timeout)
+                out, err = cap_proc.communicate(timeout=timeout)
             except subprocess.TimeoutExpired:
-                proc.kill()
-                out, err = proc.communicate()
+                cap_proc.kill()
+                out, err = cap_proc.communicate()
 
-            result.exit_code = proc.returncode
+            result.exit_code = cap_proc.returncode
             result.stdout_text = out.strip() if out and out.strip() else None
             result.stderr_text = err.strip() if err and err.strip() else None
 
@@ -207,7 +206,7 @@ def probe_executable(
     # -- 2. Bare execution --------------------------------------------------
     console.print()
     console.rule("[bold]Test: bare execution (no arguments)[/bold]")
-    bare = _run_single_test([target], "bare execution", launch_detached=True)
+    bare = _run_single_test([target], "bare execution", capture_output=False)
     report.tests.append(bare)
     _print_test(bare, console)
 
