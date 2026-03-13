@@ -20,6 +20,7 @@ import shutil
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from launch_lab.collect import save_result
@@ -171,6 +172,64 @@ def _build_venv_command(scenario: Scenario) -> list[str]:
     return [str(scripts_dir / f"python{_EXE_SUFFIX}"), *scenario.args]
 
 
+def _is_python_like(exe_path: str) -> bool:
+    """Heuristically check if the executable looks like a Python interpreter."""
+    stem = Path(exe_path).stem.lower()
+    return stem in (
+        "python",
+        "python3",
+        "pythonw",
+        "pythonw3",
+    ) or stem.startswith(("python3.", "pythonw3."))
+
+
+@dataclass
+class _DetectionResult:
+    """Window/console detection observations from Phase 1."""
+
+    processes: list
+    visible_window: bool | None = None
+    console_window: bool | None = None
+    creation_flags: int | None = None
+
+
+def _try_keepalive_detection(exe: str) -> _DetectionResult | None:
+    """Re-launch *exe* with a keepalive command for window/console detection.
+
+    When a spawned process exits before we can snapshot its process tree and
+    console host, this helper re-launches the executable with a long-lived
+    command so we can still observe whether Windows allocates a console.
+
+    Returns a :class:`_DetectionResult` on success, or ``None`` if no keepalive
+    strategy is available for the executable.
+    """
+    if _is_python_like(exe):
+        keepalive_cmd = [exe, "-c", "import time; time.sleep(10)"]
+    else:
+        return None
+
+    ka_proc = subprocess.Popen(
+        keepalive_cmd,
+        creationflags=subprocess.CREATE_NEW_CONSOLE,
+    )
+    time.sleep(0.5)
+    try:
+        if ka_proc.poll() is None:
+            result = _DetectionResult(
+                processes=get_process_tree(ka_proc.pid),
+                visible_window=detect_visible_window(ka_proc.pid),
+                console_window=detect_console_host(ka_proc.pid),
+                creation_flags=get_creation_flags(ka_proc.pid),
+            )
+            ka_proc.kill()
+            ka_proc.wait()
+            return result
+    except Exception:  # noqa: BLE001
+        pass
+    ka_proc.wait()
+    return None
+
+
 def run_scenario(
     scenario: Scenario,
     timeout: float = 30.0,
@@ -206,29 +265,57 @@ def run_scenario(
     processes = []
 
     try:
+        # ----------------------------------------------------------------
+        # Phase 1 — Window / console detection (Windows only)
+        # Launch with CREATE_NEW_CONSOLE and *no pipes* so Windows
+        # allocates a real console.  Pipes suppress console allocation,
+        # which would otherwise cause detect_visible_window / console_host
+        # to always return False for CUI executables.
+        # ----------------------------------------------------------------
+        if _IS_WINDOWS:
+            detect_proc = subprocess.Popen(
+                cmd,
+                creationflags=subprocess.CREATE_NEW_CONSOLE,
+                # No stdout/stderr pipes — process gets its own console.
+            )
+
+            # Poll aggressively for fast-exiting processes.
+            for _ in range(6):
+                time.sleep(0.05)
+                if detect_proc.poll() is not None:
+                    break
+            else:
+                time.sleep(0.2)
+
+            if detect_proc.poll() is None:
+                processes = get_process_tree(detect_proc.pid)
+                visible_window = detect_visible_window(detect_proc.pid)
+                console_window = detect_console_host(detect_proc.pid)
+                creation_flags = get_creation_flags(detect_proc.pid)
+                detect_proc.kill()
+                detect_proc.wait()
+            else:
+                detect_proc.wait()
+                # Process exited too quickly — console host is already gone.
+                # Re-launch the bare executable with a keepalive if possible
+                # so we can still observe console/window behaviour.
+                det = _try_keepalive_detection(cmd[0])
+                if det is not None:
+                    processes = det.processes
+                    visible_window = det.visible_window
+                    console_window = det.console_window
+                    creation_flags = det.creation_flags
+
+        # ----------------------------------------------------------------
+        # Phase 2 — Output capture (always)
+        # Run again with pipes to collect stdout/stderr and exit code.
+        # ----------------------------------------------------------------
         proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
         )
-
-        # Brief pause to allow Windows to set up the process tree and
-        # allocate console handles before we snapshot.
-        time.sleep(0.3)
-
-        # --- Windows-only observation while the child is still alive ---
-        if proc.poll() is None:
-            # Process is still running; collect live observations
-            processes = get_process_tree(proc.pid)
-            visible_window = detect_visible_window(proc.pid)
-            console_window = detect_console_host(proc.pid)
-            creation_flags = get_creation_flags(proc.pid)
-        else:
-            # Process finished very quickly; we can still attempt tree
-            # queries but the child may already have exited.
-            processes = get_process_tree(proc.pid)
-            console_window = detect_console_host(proc.pid)
 
         # Wait for process to finish and capture output
         try:
