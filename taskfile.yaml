@@ -66,7 +66,9 @@ tasks:
   report:
     desc: Build the report
     cmds:
-      - uv run py-launch-lab report build
+      - uv run py-launch-lab report build {{if .FORCE}}--force{{end}}
+    vars:
+      FORCE: '{{.FORCE | default ""}}'
 
   shim-build:
     desc: Build the Rust shim (Windows only)
