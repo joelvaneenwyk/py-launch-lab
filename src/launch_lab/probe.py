@@ -49,6 +49,7 @@ class ProbeTest:
     visible_window: bool | None = None
     processes: list[ProcessInfo] = field(default_factory=list)
     error: str | None = None
+    output_captured: bool = True  # False when launched without pipes (detached mode)
 
 
 @dataclass
@@ -70,20 +71,42 @@ def _run_single_test(
     cmd: list[str],
     label: str,
     timeout: float = 10.0,
+    *,
+    launch_detached: bool = False,
 ) -> ProbeTest:
-    """Run a single probe test and collect observations."""
+    """Run a single probe test and collect observations.
+
+    When *launch_detached* is True on Windows the process is launched with
+    ``CREATE_NEW_CONSOLE`` and without capturing stdout/stderr — mimicking the
+    behaviour of running the executable from the Win+R dialog.  This is the
+    correct mode for observing whether the executable creates a visible window.
+    """
     result = ProbeTest(label=label, command=cmd)
 
+    # On Windows, bare-execution tests are launched with CREATE_NEW_CONSOLE so
+    # that a new console is allocated (exactly like Win+R) rather than having
+    # the subprocess inherit our pipes.
+    _CREATE_NEW_CONSOLE = 0x00000010
+    use_detached = launch_detached and _IS_WINDOWS
+
     try:
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
+        if use_detached:
+            proc = subprocess.Popen(
+                cmd,
+                creationflags=_CREATE_NEW_CONSOLE,
+                # No stdout/stderr pipes — the process gets its own console.
+            )
+            result.output_captured = False
+        else:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
 
         # Brief pause to let Windows set up the process tree / console.
-        time.sleep(0.4)
+        time.sleep(0.5)
 
         # Collect observations while the child is still alive.
         if proc.poll() is None:
@@ -94,15 +117,22 @@ def _run_single_test(
             result.processes = get_process_tree(proc.pid)
             result.console_window = detect_console_host(proc.pid)
 
-        try:
-            out, err = proc.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            out, err = proc.communicate()
+        if use_detached:
+            # Kill the process since we have no pipes to drain.
+            if proc.poll() is None:
+                proc.kill()
+            proc.wait()
+            result.exit_code = proc.returncode
+        else:
+            try:
+                out, err = proc.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                out, err = proc.communicate()
 
-        result.exit_code = proc.returncode
-        result.stdout_text = out.strip() if out and out.strip() else None
-        result.stderr_text = err.strip() if err and err.strip() else None
+            result.exit_code = proc.returncode
+            result.stdout_text = out.strip() if out and out.strip() else None
+            result.stderr_text = err.strip() if err and err.strip() else None
 
     except FileNotFoundError:
         result.error = f"Executable not found: {cmd[0]}"
@@ -177,7 +207,7 @@ def probe_executable(
     # -- 2. Bare execution --------------------------------------------------
     console.print()
     console.rule("[bold]Test: bare execution (no arguments)[/bold]")
-    bare = _run_single_test([target], "bare execution")
+    bare = _run_single_test([target], "bare execution", launch_detached=True)
     report.tests.append(bare)
     _print_test(bare, console)
 
@@ -277,23 +307,29 @@ def _print_test(test: ProbeTest, console: Console) -> None:
     table.add_row("Visible window", _bool_indicator(test.visible_window))
     table.add_row(
         "Process tree",
-        ", ".join(p.name for p in test.processes) if test.processes else "[dim](empty)[/dim]",
+        ", ".join(p.exe or p.name for p in test.processes)
+        if test.processes
+        else "[dim](empty)[/dim]",
     )
 
-    if test.stdout_text:
-        # Truncate long output
-        out = test.stdout_text
-        if len(out) > 200:
-            out = out[:200] + " …"
-        table.add_row("Stdout", out)
+    if not test.output_captured:
+        table.add_row("Stdout", "[dim](not captured -- launched without pipes)[/dim]")
+        table.add_row("Stderr", "[dim](not captured -- launched without pipes)[/dim]")
     else:
-        table.add_row("Stdout", "[dim](empty)[/dim]")
+        if test.stdout_text:
+            # Truncate long output
+            out = test.stdout_text
+            if len(out) > 200:
+                out = out[:200] + " ..."
+            table.add_row("Stdout", out)
+        else:
+            table.add_row("Stdout", "[dim](empty)[/dim]")
 
-    if test.stderr_text:
-        err = test.stderr_text
-        if len(err) > 200:
-            err = err[:200] + " …"
-        table.add_row("Stderr", err)
+        if test.stderr_text:
+            err = test.stderr_text
+            if len(err) > 200:
+                err = err[:200] + " ..."
+            table.add_row("Stderr", err)
 
     console.print(table)
 
