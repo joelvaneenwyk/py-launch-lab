@@ -109,6 +109,11 @@ class ScenarioResult(BaseModel):
         description="Snapshot of the observed process tree at time of collection.",
     )
 
+    # Command line
+    command_line: list[str] | None = Field(
+        None, description="Full command line used to launch the scenario."
+    )
+
     # Outcome
     exit_code: int | None = Field(None, description="Exit code of the top-level process.")
     stdout_text: str | None = Field(None, description="Captured stdout (truncated if large).")

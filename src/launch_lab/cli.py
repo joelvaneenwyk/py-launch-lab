@@ -6,12 +6,13 @@ Commands:
     py-launch-lab scenario run <scenario-id>
     py-launch-lab matrix run
     py-launch-lab matrix list
-    py-launch-lab report build
+    py-launch-lab report build [--force]
     py-launch-lab inspect exe <path>
 """
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Annotated
 
@@ -33,6 +34,28 @@ inspect_app = typer.Typer(help="Inspection commands.")
 app.add_typer(inspect_app, name="inspect")
 
 console = Console()
+
+
+def _setup_logging(verbose: bool = True) -> None:
+    """Configure logging for the CLI.
+
+    When verbose is True, DEBUG-level messages from launch_lab are emitted
+    to stderr via rich-style formatting.
+    """
+    level = logging.DEBUG if verbose else logging.INFO
+    handler = logging.StreamHandler()
+    handler.setLevel(level)
+    formatter = logging.Formatter(
+        fmt="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
+    handler.setFormatter(formatter)
+
+    root_logger = logging.getLogger("launch_lab")
+    root_logger.setLevel(level)
+    # Avoid duplicate handlers on repeated calls
+    if not root_logger.handlers:
+        root_logger.addHandler(handler)
 
 
 @app.callback(invoke_without_command=True)
@@ -155,13 +178,22 @@ def report_cmd(
     findings: str | None = typer.Option(
         None, "--findings", "-f", help="Also write report to findings directory."
     ),
+    force: bool = typer.Option(
+        False, "--force", help="Force regeneration even if the report is up-to-date."
+    ),
 ) -> None:
     """Build reports from collected artifacts."""
+    _setup_logging(verbose=True)
+
     if action == "build":
         from launch_lab.html_report import build_html_report
         from launch_lab.report import build_report
 
         json_path = Path(json_dir)
+
+        console.print(f"[bold]Building reports[/bold] (force={force})")
+        console.print(f"  JSON source: [cyan]{json_path.resolve()}[/cyan]")
+
         findings_path = Path(findings) if findings else None
         dest = build_report(
             json_dir=json_path,
@@ -174,7 +206,7 @@ def report_cmd(
         console.print(f"[green]Report written -> {dest}[/green]")
         if findings_path:
             console.print(f"[green]Findings written -> {findings_path / 'report.md'}[/green]")
-        html_dest = build_html_report(json_dir=json_path)
+        html_dest = build_html_report(json_dir=json_path, force=force)
         if html_dest is not None:
             console.print(f"[green]HTML report written -> {html_dest}[/green]")
     else:

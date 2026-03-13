@@ -356,6 +356,7 @@ def run_scenario(
         visible_window_detected=visible_window,
         console_window_detected=console_window,
         processes=processes,
+        command_line=cmd,
         exit_code=exit_code,
         stdout_text=stdout_text,
         stderr_text=stderr_text,
