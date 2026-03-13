@@ -86,14 +86,13 @@ def _run_single_test(
     # On Windows, bare-execution tests are launched with CREATE_NEW_CONSOLE so
     # that a new console is allocated (exactly like Win+R) rather than having
     # the subprocess inherit our pipes.
-    _CREATE_NEW_CONSOLE = 0x00000010
     use_detached = launch_detached and _IS_WINDOWS
 
     try:
         if use_detached:
             proc = subprocess.Popen(
                 cmd,
-                creationflags=_CREATE_NEW_CONSOLE,
+                creationflags=subprocess.CREATE_NEW_CONSOLE,
                 # No stdout/stderr pipes — the process gets its own console.
             )
             result.output_captured = False
@@ -119,10 +118,11 @@ def _run_single_test(
 
         if use_detached:
             # Kill the process since we have no pipes to drain.
+            # Exit code is left as None: the process was terminated by the
+            # probe itself so any returncode would be misleading.
             if proc.poll() is None:
                 proc.kill()
             proc.wait()
-            result.exit_code = proc.returncode
         else:
             try:
                 out, err = proc.communicate(timeout=timeout)

@@ -78,6 +78,21 @@ def _get_process_tree_toolhelp(pid: int) -> list[ProcessInfo]:
     kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
     kernel32.CreateToolhelp32Snapshot.restype = ctypes.wintypes.HANDLE
     kernel32.CreateToolhelp32Snapshot.argtypes = [ctypes.wintypes.DWORD, ctypes.wintypes.DWORD]
+    kernel32.OpenProcess.restype = ctypes.wintypes.HANDLE
+    kernel32.OpenProcess.argtypes = [
+        ctypes.wintypes.DWORD,
+        ctypes.wintypes.BOOL,
+        ctypes.wintypes.DWORD,
+    ]
+    kernel32.QueryFullProcessImageNameW.restype = ctypes.wintypes.BOOL
+    kernel32.QueryFullProcessImageNameW.argtypes = [
+        ctypes.wintypes.HANDLE,
+        ctypes.wintypes.DWORD,
+        ctypes.wintypes.LPWSTR,
+        ctypes.POINTER(ctypes.wintypes.DWORD),
+    ]
+    kernel32.CloseHandle.restype = ctypes.wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [ctypes.wintypes.HANDLE]
 
     snapshot = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
     if snapshot == INVALID_HANDLE_VALUE:
@@ -102,11 +117,23 @@ def _get_process_tree_toolhelp(pid: int) -> list[ProcessInfo]:
                 )
                 if hproc and hproc != INVALID_HANDLE_VALUE:
                     try:
-                        buf = ctypes.create_unicode_buffer(1024)
+                        # Start with a generous buffer; retry with a larger one
+                        # if the path is longer than expected.
+                        ERROR_INSUFFICIENT_BUFFER = 0x7A
                         buf_size = ctypes.wintypes.DWORD(1024)
-                        if kernel32.QueryFullProcessImageNameW(
+                        buf = ctypes.create_unicode_buffer(buf_size.value)
+                        if not kernel32.QueryFullProcessImageNameW(
                             hproc, 0, buf, ctypes.byref(buf_size)
                         ):
+                            err = ctypes.get_last_error()
+                            if err == ERROR_INSUFFICIENT_BUFFER:
+                                # The path didn't fit — resize to what Windows reported.
+                                buf = ctypes.create_unicode_buffer(buf_size.value)
+                                if kernel32.QueryFullProcessImageNameW(
+                                    hproc, 0, buf, ctypes.byref(buf_size)
+                                ):
+                                    exe_path = buf.value
+                        else:
                             exe_path = buf.value
                     except Exception:  # noqa: BLE001
                         _log.debug(
