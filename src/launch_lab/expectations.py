@@ -201,7 +201,8 @@ EXPECTATIONS: dict[str, ExpectedBehaviour] = {
             "pythonw.exe — if that binary is a CUI copy (as in uv venvs), a console "
             "window WILL flash because the child process triggers console allocation.  "
             "This is a known uv bug where the venv pythonw.exe is not actually "
-            "GUI-subsystem."
+            "GUI-subsystem.  Investigation: https://github.com/joelvaneenwyk/uv/issues/1  "
+            "Fix in progress: https://github.com/joelvaneenwyk/uv/pull/2"
         ),
         doc_url="https://github.com/astral-sh/uv/issues/9781",
     ),
@@ -210,9 +211,7 @@ EXPECTATIONS: dict[str, ExpectedBehaviour] = {
         console_window=True,
         stdout_available=True,
         exit_code=0,
-        explanation=(
-            "Dual-mode package console entry-point.  The console wrapper is CUI."
-        ),
+        explanation=("Dual-mode package console entry-point.  The console wrapper is CUI."),
     ),
     "venv-dual-gui-entrypoint": ExpectedBehaviour(
         pe_subsystem=Subsystem.GUI,
@@ -224,7 +223,9 @@ EXPECTATIONS: dict[str, ExpectedBehaviour] = {
             "Dual-mode package GUI entry-point.  The GUI wrapper should not "
             "create a console.  However, if the venv's pythonw.exe is actually "
             "a CUI binary (uv venv bug), the child process WILL allocate a "
-            "console window — appearing as an unwanted terminal flash."
+            "console window — appearing as an unwanted terminal flash.  "
+            "Investigation: https://github.com/joelvaneenwyk/uv/issues/1  "
+            "Fix in progress: https://github.com/joelvaneenwyk/uv/pull/2"
         ),
         doc_url="https://github.com/astral-sh/uv/issues/9781",
     ),
@@ -248,7 +249,9 @@ EXPECTATIONS: dict[str, ExpectedBehaviour] = {
             "pythonw.exe SHOULD be a GUI-subsystem binary (no console window).  "
             "However, some venv implementations (including uv) create a CUI shim "
             "instead, which means a console window flashes — this is a known bug.  "
-            "If the PE subsystem shows CUI instead of GUI, that's the issue."
+            "If the PE subsystem shows CUI instead of GUI, that's the issue.  "
+            "Investigation: https://github.com/joelvaneenwyk/uv/issues/1  "
+            "Fix in progress: https://github.com/joelvaneenwyk/uv/pull/2"
         ),
         doc_url="https://github.com/astral-sh/uv/issues/9781",
     ),
@@ -299,60 +302,70 @@ def check_expectations(result: ScenarioResult) -> list[Anomaly]:
     anomalies: list[Anomaly] = []
 
     if expected.exit_code is not None and result.exit_code != expected.exit_code:
-        anomalies.append(Anomaly(
-            field="Exit Code",
-            expected=str(expected.exit_code),
-            actual=str(result.exit_code),
-            explanation=expected.explanation,
-            doc_url=expected.doc_url,
-        ))
+        anomalies.append(
+            Anomaly(
+                field="Exit Code",
+                expected=str(expected.exit_code),
+                actual=str(result.exit_code),
+                explanation=expected.explanation,
+                doc_url=expected.doc_url,
+            )
+        )
 
     if expected.pe_subsystem is not None and result.pe_subsystem != expected.pe_subsystem:
-        anomalies.append(Anomaly(
-            field="PE Subsystem",
-            expected=expected.pe_subsystem.value,
-            actual=str(result.pe_subsystem) if result.pe_subsystem else "N/A",
-            explanation=expected.explanation,
-            doc_url=expected.doc_url,
-        ))
+        anomalies.append(
+            Anomaly(
+                field="PE Subsystem",
+                expected=expected.pe_subsystem.value,
+                actual=str(result.pe_subsystem) if result.pe_subsystem else "N/A",
+                explanation=expected.explanation,
+                doc_url=expected.doc_url,
+            )
+        )
 
     if (
         expected.console_window is not None
         and result.console_window_detected is not None
         and result.console_window_detected != expected.console_window
     ):
-        anomalies.append(Anomaly(
-            field="Console Window",
-            expected="Yes" if expected.console_window else "No",
-            actual="Yes" if result.console_window_detected else "No",
-            explanation=expected.explanation,
-            doc_url=expected.doc_url,
-        ))
+        anomalies.append(
+            Anomaly(
+                field="Console Window",
+                expected="Yes" if expected.console_window else "No",
+                actual="Yes" if result.console_window_detected else "No",
+                explanation=expected.explanation,
+                doc_url=expected.doc_url,
+            )
+        )
 
     if (
         expected.visible_window is not None
         and result.visible_window_detected is not None
         and result.visible_window_detected != expected.visible_window
     ):
-        anomalies.append(Anomaly(
-            field="Visible Window",
-            expected="Yes" if expected.visible_window else "No",
-            actual="Yes" if result.visible_window_detected else "No",
-            explanation=expected.explanation,
-            doc_url=expected.doc_url,
-        ))
+        anomalies.append(
+            Anomaly(
+                field="Visible Window",
+                expected="Yes" if expected.visible_window else "No",
+                actual="Yes" if result.visible_window_detected else "No",
+                explanation=expected.explanation,
+                doc_url=expected.doc_url,
+            )
+        )
 
     if (
         expected.stdout_available is not None
         and result.stdout_available is not None
         and result.stdout_available != expected.stdout_available
     ):
-        anomalies.append(Anomaly(
-            field="stdout",
-            expected="Yes" if expected.stdout_available else "No",
-            actual="Yes" if result.stdout_available else "No",
-            explanation=expected.explanation,
-            doc_url=expected.doc_url,
-        ))
+        anomalies.append(
+            Anomaly(
+                field="stdout",
+                expected="Yes" if expected.stdout_available else "No",
+                actual="Yes" if result.stdout_available else "No",
+                explanation=expected.explanation,
+                doc_url=expected.doc_url,
+            )
+        )
 
     return anomalies
