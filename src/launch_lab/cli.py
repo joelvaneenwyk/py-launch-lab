@@ -2,6 +2,7 @@
 CLI entrypoint for py-launch-lab.
 
 Commands:
+    py-launch-lab probe <executable>      — probe a binary (terminal detection)
     py-launch-lab scenario run <scenario-id>
     py-launch-lab matrix run
     py-launch-lab matrix list
@@ -12,6 +13,7 @@ Commands:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Annotated
 
 import typer
 from rich.console import Console
@@ -192,3 +194,30 @@ def inspect_exe(
         console.print(f"[red]Could not inspect:[/red] {path}")
         raise typer.Exit(1)
     console.print(result)
+
+
+@app.command("probe")
+def probe_cmd(
+    executable: str = typer.Argument(
+        ..., help="Path to the executable to probe for terminal behaviour."
+    ),
+    extra_args: Annotated[
+        list[str] | None,
+        typer.Option("--arg", "-a", help="Additional argument(s) to pass in a custom test run."),
+    ] = None,
+) -> None:
+    """Probe an executable to determine if it launches a terminal.
+
+    Runs a sequence of diagnostic tests — PE inspection, bare execution,
+    and (for Python interpreters) version / hello-world checks — then
+    reports whether a console window was detected.
+
+    Examples:
+
+        py-launch-lab probe .cache/test_venv_0/Scripts/pythonw.exe
+
+        py-launch-lab probe python.exe -a --version
+    """
+    from launch_lab.probe import probe_executable
+
+    probe_executable(executable, console, extra_args=extra_args)
