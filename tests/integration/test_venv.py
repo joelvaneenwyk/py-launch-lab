@@ -402,14 +402,19 @@ class TestVenvPythonW:
     def test_venv_pythonw_subsystem(self, venv_dir: Path) -> None:
         """On Windows the venv pythonw.exe PE subsystem is documented.
 
-        With ``uv venv``, pythonw.exe is a CUI trampoline that launches the
-        real GUI-subsystem interpreter internally.  With ``python -m venv``
-        it would be a true GUI PE binary.  Both are acceptable.
+        **Finding:** ``uv venv`` creates ``pythonw.exe`` as a CUI trampoline
+        (not a true GUI PE binary).  This is a known divergence from
+        ``python -m venv``, which copies the real GUI-subsystem
+        ``pythonw.exe``.  The consequence is that ``uv``-venv ``pythonw.exe``
+        *does* allocate a console window on launch, whereas the stdlib venv
+        ``pythonw.exe`` does not.
+
+        Both are accepted here so the test suite works with either venv tool.
         """
         pythonw = venv_dir / _SCRIPTS_DIR / "pythonw.exe"
         subsystem = inspect_pe(pythonw)
         print(f"\n  venv pythonw PE subsystem: {subsystem}")
-        # uv venv may produce CUI trampolines; stdlib venv produces GUI.
+        # uv venv produces CUI trampolines; stdlib venv produces GUI.
         assert subsystem in ("CUI", "GUI"), (
             f"Expected venv pythonw to be CUI or GUI, got {subsystem}. "
             "uv venv creates CUI trampolines; stdlib venv copies the real GUI exe."
@@ -431,22 +436,43 @@ class TestVenvPythonW:
         assert result.exit_code == 0
 
     @pytest.mark.skipif(not _IS_WINDOWS, reason="pythonw only exists on Windows")
-    def test_venv_pythonw_no_console_window(self, venv_dir: Path) -> None:
-        """pythonw (GUI subsystem) should NOT produce a console window."""
+    def test_venv_pythonw_console_window(self, venv_dir: Path) -> None:
+        """Document console-window behaviour of venv pythonw.exe.
+
+        **Finding:** ``uv venv`` creates ``pythonw.exe`` as a CUI trampoline
+        (PE subsystem = CUI), not a true GUI-subsystem binary.  This means it
+        *does* allocate a console window — unlike the system ``pythonw.exe``
+        which is a genuine GUI executable.
+
+        ``python -m venv`` copies the real GUI-subsystem ``pythonw.exe``, so
+        the behaviour differs depending on which tool created the venv.
+
+        This test asserts the *actual* observed behaviour with ``uv venv``
+        rather than the "ideal" behaviour, so the test suite documents reality.
+        """
         pythonw = venv_dir / _SCRIPTS_DIR / "pythonw.exe"
         script = _FIXTURES / "raw_py" / "hello.py"
+        subsystem = inspect_pe(pythonw)
         scenario = _make_venv_scenario(
-            "venv-pythonw-no-console",
+            "venv-pythonw-console-check",
             str(pythonw),
             [str(script)],
-            description="venv pythonw hello.py — should have no console",
+            description="venv pythonw hello.py — document console behaviour",
         )
         result = run_scenario(scenario, timeout=15)
-        # pythonw is a GUI-subsystem exe; it should not create a console
-        if result.console_window_detected is not None:
-            assert result.console_window_detected is False, (
-                "venv pythonw.exe (GUI) should NOT create a console window"
-            )
+
+        if subsystem == "CUI":
+            # uv venv: pythonw.exe is a CUI trampoline → DOES create a console.
+            if result.console_window_detected is not None:
+                assert result.console_window_detected is True, (
+                    "uv-venv pythonw.exe is CUI and should create a console window"
+                )
+        else:
+            # stdlib venv: pythonw.exe is true GUI → should NOT create a console.
+            if result.console_window_detected is not None:
+                assert result.console_window_detected is False, (
+                    "stdlib-venv pythonw.exe is GUI and should NOT create a console window"
+                )
 
     def test_venv_pythonw_absent_on_non_windows(self, venv_dir: Path) -> None:
         """On non-Windows there is no pythonw executable in the venv."""

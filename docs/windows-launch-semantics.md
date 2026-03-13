@@ -11,6 +11,28 @@ Every Windows executable has a **subsystem** field in its PE optional header:
 
 `python.exe` is CUI.  `pythonw.exe` is GUI.
 
+## uv venv pythonw.exe — CUI Trampoline
+
+!!! warning "Unexpected: uv-venv `pythonw.exe` allocates a console"
+
+`uv venv` does **not** copy the real GUI-subsystem `pythonw.exe` into the
+virtual environment.  Instead it generates a **CUI trampoline** — a small
+console-subsystem executable that internally launches the base interpreter.
+Because the trampoline's PE subsystem is CUI (not GUI), Windows allocates a
+console window when it is launched without an existing console.
+
+This differs from `python -m venv`, which copies the genuine GUI-subsystem
+`pythonw.exe` and therefore does **not** create a console.
+
+| venv tool           | pythonw.exe PE subsystem | Console allocated? |
+|---------------------|--------------------------|--------------------|
+| `python -m venv`    | GUI                      | No                 |
+| `uv venv`           | CUI (trampoline)         | **Yes**            |
+
+This is a known `uv` behaviour (as of uv 0.10.x) and may change in future
+releases.  The py-launch-lab test suite asserts the *actual* observed
+behaviour rather than the expected ideal.
+
 ## Console Attachment
 
 When a CUI executable is launched from a console, it inherits that console.
