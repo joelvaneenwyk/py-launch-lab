@@ -5,6 +5,7 @@ vars:
   PYTHON: uv run python
   PKG: launch_lab
   UV_VERSION: '{{.UV_VERSION | default "latest"}}'
+  CUSTOM_UV: '{{.CUSTOM_UV | default ""}}'
 
 tasks:
   default:
@@ -45,6 +46,8 @@ tasks:
     desc: Run unit tests
     cmds:
       - uv run pytest tests/ -v
+    env:
+      CUSTOM_UV: "{{.CUSTOM_UV}}"
 
   env-info:
     desc: Print environment info (OS, Python, uv versions)
@@ -56,12 +59,12 @@ tasks:
   run:
     desc: Run the CLI
     cmds:
-      - uv run py-launch-lab {{.CLI_ARGS}}
+      - uv run py-launch-lab {{.CLI_ARGS}} {{if .CUSTOM_UV}}--custom-uv {{.CUSTOM_UV}}{{end}}
 
   matrix-run:
     desc: Run the full scenario matrix
     cmds:
-      - uv run py-launch-lab matrix run
+      - uv run py-launch-lab matrix run {{if .CUSTOM_UV}}--custom-uv {{.CUSTOM_UV}}{{end}}
 
   report:
     desc: Build the report

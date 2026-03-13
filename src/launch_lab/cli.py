@@ -20,6 +20,7 @@ import typer
 from rich.console import Console
 
 from launch_lab import __version__
+from launch_lab.uv_provider import get_custom_uv_source, setup_custom_uv
 
 app = typer.Typer(
     name="py-launch-lab",
@@ -58,6 +59,21 @@ def _setup_logging(verbose: bool = True) -> None:
         root_logger.addHandler(handler)
 
 
+def _init_custom_uv(source: str) -> None:
+    """Configure a custom uv binary from a path or git URL.
+
+    Prints progress messages and exits on failure.
+    """
+    _setup_logging(verbose=True)
+    console.print(f"[bold]Custom uv:[/bold] {source}")
+    try:
+        uv_bin = setup_custom_uv(source)
+        console.print(f"  [green]Resolved uv binary:[/green] {uv_bin}")
+    except RuntimeError as exc:
+        console.print(f"  [red]Failed to resolve custom uv:[/red] {exc}")
+        raise typer.Exit(1) from exc
+
+
 @app.callback(invoke_without_command=True)
 def main(
     version: bool = typer.Option(False, "--version", "-V", help="Show version and exit."),
@@ -72,10 +88,22 @@ def main(
 def scenario_run(
     scenario_id: str = typer.Argument(..., help="Scenario ID to run (e.g. 'python-script-py')."),
     output: str = typer.Option("artifacts/json", "--output", "-o", help="Artifact output dir."),
+    custom_uv: str | None = typer.Option(
+        None,
+        "--custom-uv",
+        help=(
+            "Custom uv source: a path to a uv binary, a Rust source directory, "
+            "or a git URL (e.g. https://github.com/joelvaneenwyk/uv). "
+            "When set, all uv/uvx/uvw invocations use this build."
+        ),
+    ),
 ) -> None:
     """Run a single scenario by ID and save the evidence artifact."""
     from launch_lab.matrix import get_scenario
     from launch_lab.runner import run_scenario
+
+    if custom_uv:
+        _init_custom_uv(custom_uv)
 
     scenario = get_scenario(scenario_id)
     if scenario is None:
@@ -98,8 +126,20 @@ def scenario_run(
 def matrix_cmd(
     action: str = typer.Argument("run", help="Action: 'run' or 'list'."),
     output: str = typer.Option("artifacts/json", "--output", "-o", help="Artifact output dir."),
+    custom_uv: str | None = typer.Option(
+        None,
+        "--custom-uv",
+        help=(
+            "Custom uv source: a path to a uv binary, a Rust source directory, "
+            "or a git URL (e.g. https://github.com/joelvaneenwyk/uv). "
+            "When set, all uv/uvx/uvw invocations use this build."
+        ),
+    ),
 ) -> None:
     """Run or list the full scenario matrix."""
+    if custom_uv:
+        _init_custom_uv(custom_uv)
+
     if action == "list":
         from launch_lab.matrix import get_matrix
 
@@ -126,6 +166,9 @@ def matrix_cmd(
         console.print(f"  Python: {_python_version()}")
         uv_ver = _uv_version()
         console.print(f"  uv:     {uv_ver or 'not available'}")
+        uv_src = get_custom_uv_source()
+        if uv_src:
+            console.print(f"  uv src: [cyan]{uv_src}[/cyan]")
         console.print("")
 
         console.print(f"Running {len(matrix)} scenarios ...")

@@ -33,6 +33,7 @@ from launch_lab.detect_windows import (
 from launch_lab.inspect_pe import inspect_pe
 from launch_lab.matrix import Scenario
 from launch_lab.models import LauncherKind, ScenarioResult
+from launch_lab.uv_provider import get_uv_binary, is_custom_uv_configured
 
 # ---------------------------------------------------------------------------
 # Project paths
@@ -57,10 +58,15 @@ def _python_version() -> str:
 
 
 def _uv_version() -> str | None:
-    """Return uv version string, or None if uv is not on PATH."""
+    """Return uv version string, or None if uv is not available.
+
+    When a custom uv binary has been configured via ``--custom-uv``, this
+    queries the custom binary rather than the system ``uv``.
+    """
+    uv_bin = get_uv_binary("uv")
     try:
         result = subprocess.run(
-            ["uv", "--version"],
+            [uv_bin, "--version"],
             capture_output=True,
             text=True,
             timeout=10,
@@ -111,9 +117,10 @@ def _ensure_matrix_venv() -> Path:
     python_exe = scripts_dir / f"python{_EXE_SUFFIX}"
 
     # Create the venv if the python executable is missing.
+    uv_bin = get_uv_binary("uv")
     if not python_exe.exists():
         _CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        subprocess.check_call(["uv", "venv", str(venv_dir)], timeout=60)
+        subprocess.check_call([uv_bin, "venv", str(venv_dir)], timeout=60)
 
     # Install fixture packages (idempotent — uv pip handles re-installs).
     for pkg in ("pkg_console", "pkg_gui", "pkg_dual"):
@@ -121,7 +128,7 @@ def _ensure_matrix_venv() -> Path:
         if pkg_path.exists():
             subprocess.check_call(
                 [
-                    "uv",
+                    uv_bin,
                     "pip",
                     "install",
                     "--python",
@@ -412,7 +419,7 @@ def run_scenario(
 
             if effective_subsystem is not None:
                 if console_window is None:
-                    console_window = (effective_subsystem == "CUI")
+                    console_window = effective_subsystem == "CUI"
                 if visible_window is None:
                     if effective_subsystem == "CUI":
                         # CUI child process — console is typically visible
@@ -494,11 +501,16 @@ def run_scenario(
 def _resolve_launcher(launcher: str) -> str:
     """Resolve a launcher name to a full path if needed.
 
-    For ``pyshim-win`` the binary lives inside the Cargo build tree and is
-    not on PATH.  We look for it in the ``crates/pyshim-win/target``
-    directory (release first, then debug).  If the binary is already on
-    PATH we return it unchanged.
+    When a custom uv has been configured via ``--custom-uv``, all
+    ``uv`` / ``uvx`` / ``uvw`` launchers are resolved to the custom build
+    directory.  For ``pyshim-win`` the binary lives inside the Cargo build
+    tree.  Otherwise, if the binary is already on PATH it is returned
+    unchanged.
     """
+    # Custom uv override — resolve uv-family binaries from the provider.
+    if launcher in ("uv", "uvx", "uvw") and is_custom_uv_configured():
+        return get_uv_binary(launcher)
+
     if shutil.which(launcher) is not None:
         return launcher
 
