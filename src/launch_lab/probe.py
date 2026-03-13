@@ -67,6 +67,75 @@ class ProbeReport:
 # ---------------------------------------------------------------------------
 
 
+def _make_keepalive_cmd(exe: str) -> list[str] | None:
+    """Return a command that keeps *exe* alive long enough for window detection.
+
+    For Python-like executables we use ``-c "import time; time.sleep(10)"``.
+    Returns ``None`` if no keepalive strategy is known for the executable.
+    """
+    if _is_python_like(exe):
+        return [exe, "-c", "import time; time.sleep(10)"]
+    return None
+
+
+def _detect_windows_for_cmd(
+    cmd: list[str],
+    result: ProbeTest,
+) -> None:
+    """Phase 1 — Window/console detection on Windows.
+
+    Launches *cmd* with ``CREATE_NEW_CONSOLE`` and probes for visible windows
+    and console-host processes.  If the process exits before detection can run
+    (common for fast commands like ``python --version``), a *keepalive* fallback
+    is launched so we can still observe the console/window behaviour — which
+    depends on the PE subsystem, not the command-line arguments.
+    """
+    detect_proc = subprocess.Popen(
+        cmd,
+        creationflags=subprocess.CREATE_NEW_CONSOLE,
+        # No stdout/stderr pipes — the process gets its own console.
+    )
+
+    # Poll aggressively: check every 50 ms for up to ~300 ms.
+    for _ in range(6):
+        time.sleep(0.05)
+        if detect_proc.poll() is not None:
+            break  # exited before we could detect
+    else:
+        # Process still running after the loop — sleep a bit more for stability.
+        time.sleep(0.2)
+
+    if detect_proc.poll() is None:
+        # Process is still alive — observe windows now.
+        result.processes = get_process_tree(detect_proc.pid)
+        result.visible_window = detect_visible_window(detect_proc.pid)
+        result.console_window = detect_console_host(detect_proc.pid)
+        detect_proc.kill()
+        detect_proc.wait()
+        return
+
+    detect_proc.wait()
+
+    # Process exited too quickly — console host and windows are already gone.
+    # Re-launch with a keepalive command so we can still observe the
+    # console/window behaviour (which depends on the EXE, not the args).
+    keepalive = _make_keepalive_cmd(cmd[0])
+    if keepalive is None:
+        return  # No keepalive strategy available for this executable.
+
+    ka_proc = subprocess.Popen(
+        keepalive,
+        creationflags=subprocess.CREATE_NEW_CONSOLE,
+    )
+    time.sleep(0.5)
+    if ka_proc.poll() is None:
+        result.processes = get_process_tree(ka_proc.pid)
+        result.visible_window = detect_visible_window(ka_proc.pid)
+        result.console_window = detect_console_host(ka_proc.pid)
+        ka_proc.kill()
+    ka_proc.wait()
+
+
 def _run_single_test(
     cmd: list[str],
     label: str,
@@ -96,21 +165,7 @@ def _run_single_test(
         # visible_window would always report False for CUI executables.
         # --------------------------------------------------------------------
         if _IS_WINDOWS:
-            detect_proc = subprocess.Popen(
-                cmd,
-                creationflags=subprocess.CREATE_NEW_CONSOLE,
-                # No stdout/stderr pipes — the process gets its own console.
-            )
-            # Brief pause to let Windows set up the process tree / console.
-            time.sleep(0.5)
-            if detect_proc.poll() is None:
-                result.processes = get_process_tree(detect_proc.pid)
-                result.visible_window = detect_visible_window(detect_proc.pid)
-                result.console_window = detect_console_host(detect_proc.pid)
-                # Exit code is intentionally not recorded: the process was
-                # killed by the probe so any returncode would be misleading.
-                detect_proc.kill()
-            detect_proc.wait()
+            _detect_windows_for_cmd(cmd, result)
 
         # --------------------------------------------------------------------
         # Phase 2 — Output capture (optional)
