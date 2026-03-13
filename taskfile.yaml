@@ -10,7 +10,8 @@ tasks:
   default:
     desc: Show available tasks
     cmds:
-      - task: test-all
+      - task: docs
+      - task: test
       - task: matrix-run
 
   install:
@@ -77,3 +78,7 @@ tasks:
     desc: Remove build artifacts
     cmds:
       - powershell -File tools/clean.ps1
+
+  docs:
+    cmds:
+      - uv run mkdocs build --strict
