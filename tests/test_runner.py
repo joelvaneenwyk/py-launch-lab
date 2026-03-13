@@ -7,6 +7,7 @@ They do not require Windows or any external tools.
 
 import json
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -37,7 +38,10 @@ class TestBuildCommand:
 
     def test_multi_arg_command(self):
         s = _make_scenario(launcher="uv", args=["run", "hello.py"])
-        assert _build_command(s) == ["uv", "run", "hello.py"]
+        result = _build_command(s)
+        # The first element may be a full path when custom uv is configured
+        assert Path(result[0]).stem == "uv"
+        assert result[1:] == ["run", "hello.py"]
 
     def test_empty_args(self):
         s = _make_scenario(launcher="python", args=[])
