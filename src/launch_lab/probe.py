@@ -49,6 +49,7 @@ class ProbeTest:
     visible_window: bool | None = None
     processes: list[ProcessInfo] = field(default_factory=list)
     error: str | None = None
+    output_captured: bool = True  # False when launched without pipes (detached mode)
 
 
 @dataclass
@@ -66,43 +67,126 @@ class ProbeReport:
 # ---------------------------------------------------------------------------
 
 
+def _make_keepalive_cmd(exe: str) -> list[str] | None:
+    """Return a command that keeps *exe* alive long enough for window detection.
+
+    For Python-like executables we use ``-c "import time; time.sleep(10)"``.
+    Returns ``None`` if no keepalive strategy is known for the executable.
+    """
+    if _is_python_like(exe):
+        return [exe, "-c", "import time; time.sleep(10)"]
+    return None
+
+
+def _detect_windows_for_cmd(
+    cmd: list[str],
+    result: ProbeTest,
+) -> None:
+    """Phase 1 — Window/console detection on Windows.
+
+    Launches *cmd* with ``CREATE_NEW_CONSOLE`` and probes for visible windows
+    and console-host processes.  If the process exits before detection can run
+    (common for fast commands like ``python --version``), a *keepalive* fallback
+    is launched so we can still observe the console/window behaviour — which
+    depends on the PE subsystem, not the command-line arguments.
+    """
+    detect_proc = subprocess.Popen(
+        cmd,
+        creationflags=subprocess.CREATE_NEW_CONSOLE,
+        # No stdout/stderr pipes — the process gets its own console.
+    )
+
+    # Poll aggressively: check every 50 ms for up to ~300 ms.
+    for _ in range(6):
+        time.sleep(0.05)
+        if detect_proc.poll() is not None:
+            break  # exited before we could detect
+    else:
+        # Process still running after the loop — sleep a bit more for stability.
+        time.sleep(0.2)
+
+    if detect_proc.poll() is None:
+        # Process is still alive — observe windows now.
+        result.processes = get_process_tree(detect_proc.pid)
+        result.visible_window = detect_visible_window(detect_proc.pid)
+        result.console_window = detect_console_host(detect_proc.pid)
+        detect_proc.kill()
+        detect_proc.wait()
+        return
+
+    detect_proc.wait()
+
+    # Process exited too quickly — console host and windows are already gone.
+    # Re-launch with a keepalive command so we can still observe the
+    # console/window behaviour (which depends on the EXE, not the args).
+    keepalive = _make_keepalive_cmd(cmd[0])
+    if keepalive is None:
+        return  # No keepalive strategy available for this executable.
+
+    ka_proc = subprocess.Popen(
+        keepalive,
+        creationflags=subprocess.CREATE_NEW_CONSOLE,
+    )
+    time.sleep(0.5)
+    if ka_proc.poll() is None:
+        result.processes = get_process_tree(ka_proc.pid)
+        result.visible_window = detect_visible_window(ka_proc.pid)
+        result.console_window = detect_console_host(ka_proc.pid)
+        ka_proc.kill()
+    ka_proc.wait()
+
+
 def _run_single_test(
     cmd: list[str],
     label: str,
     timeout: float = 10.0,
+    *,
+    capture_output: bool = True,
 ) -> ProbeTest:
-    """Run a single probe test and collect observations."""
-    result = ProbeTest(label=label, command=cmd)
+    """Run a single probe test and collect observations.
+
+    On Windows a *window-detection pass* is always performed first: the command
+    is launched with ``CREATE_NEW_CONSOLE`` and without pipes so that Windows
+    allocates a real console (exactly like Win+R).  When pipes are attached,
+    Windows suppresses new console allocation, so ``detect_visible_window``
+    would always return ``False`` — this pass avoids that.
+
+    When *capture_output* is ``True`` a second *piped pass* is then run to
+    collect stdout, stderr, and the real exit code.  Set *capture_output* to
+    ``False`` for tests where output is not meaningful (e.g. bare execution).
+    """
+    result = ProbeTest(label=label, command=cmd, output_captured=capture_output)
 
     try:
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
+        # --------------------------------------------------------------------
+        # Phase 1 — Window detection (Windows only, always)
+        # Launch with CREATE_NEW_CONSOLE so Windows allocates a real console.
+        # Without this, redirected pipes suppress console allocation and
+        # visible_window would always report False for CUI executables.
+        # --------------------------------------------------------------------
+        if _IS_WINDOWS:
+            _detect_windows_for_cmd(cmd, result)
 
-        # Brief pause to let Windows set up the process tree / console.
-        time.sleep(0.4)
+        # --------------------------------------------------------------------
+        # Phase 2 — Output capture (optional)
+        # Run again with pipes to collect stdout/stderr and the real exit code.
+        # --------------------------------------------------------------------
+        if capture_output:
+            cap_proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            try:
+                out, err = cap_proc.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                cap_proc.kill()
+                out, err = cap_proc.communicate()
 
-        # Collect observations while the child is still alive.
-        if proc.poll() is None:
-            result.processes = get_process_tree(proc.pid)
-            result.visible_window = detect_visible_window(proc.pid)
-            result.console_window = detect_console_host(proc.pid)
-        else:
-            result.processes = get_process_tree(proc.pid)
-            result.console_window = detect_console_host(proc.pid)
-
-        try:
-            out, err = proc.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            out, err = proc.communicate()
-
-        result.exit_code = proc.returncode
-        result.stdout_text = out.strip() if out and out.strip() else None
-        result.stderr_text = err.strip() if err and err.strip() else None
+            result.exit_code = cap_proc.returncode
+            result.stdout_text = out.strip() if out and out.strip() else None
+            result.stderr_text = err.strip() if err and err.strip() else None
 
     except FileNotFoundError:
         result.error = f"Executable not found: {cmd[0]}"
@@ -177,7 +261,7 @@ def probe_executable(
     # -- 2. Bare execution --------------------------------------------------
     console.print()
     console.rule("[bold]Test: bare execution (no arguments)[/bold]")
-    bare = _run_single_test([target], "bare execution")
+    bare = _run_single_test([target], "bare execution", capture_output=False)
     report.tests.append(bare)
     _print_test(bare, console)
 
@@ -277,23 +361,29 @@ def _print_test(test: ProbeTest, console: Console) -> None:
     table.add_row("Visible window", _bool_indicator(test.visible_window))
     table.add_row(
         "Process tree",
-        ", ".join(p.name for p in test.processes) if test.processes else "[dim](empty)[/dim]",
+        ", ".join(p.exe or p.name for p in test.processes)
+        if test.processes
+        else "[dim](empty)[/dim]",
     )
 
-    if test.stdout_text:
-        # Truncate long output
-        out = test.stdout_text
-        if len(out) > 200:
-            out = out[:200] + " …"
-        table.add_row("Stdout", out)
+    if not test.output_captured:
+        table.add_row("Stdout", "[dim](not captured -- launched without pipes)[/dim]")
+        table.add_row("Stderr", "[dim](not captured -- launched without pipes)[/dim]")
     else:
-        table.add_row("Stdout", "[dim](empty)[/dim]")
+        if test.stdout_text:
+            # Truncate long output
+            out = test.stdout_text
+            if len(out) > 200:
+                out = out[:200] + " ..."
+            table.add_row("Stdout", out)
+        else:
+            table.add_row("Stdout", "[dim](empty)[/dim]")
 
-    if test.stderr_text:
-        err = test.stderr_text
-        if len(err) > 200:
-            err = err[:200] + " …"
-        table.add_row("Stderr", err)
+        if test.stderr_text:
+            err = test.stderr_text
+            if len(err) > 200:
+                err = err[:200] + " ..."
+            table.add_row("Stderr", err)
 
     console.print(table)
 

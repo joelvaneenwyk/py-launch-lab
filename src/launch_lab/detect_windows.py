@@ -59,6 +59,7 @@ def _get_process_tree_toolhelp(pid: int) -> list[ProcessInfo]:
     # Constants
     TH32CS_SNAPPROCESS = 0x00000002
     INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 
     class PROCESSENTRY32(ctypes.Structure):  # noqa: N801
         _fields_ = [
@@ -77,6 +78,21 @@ def _get_process_tree_toolhelp(pid: int) -> list[ProcessInfo]:
     kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
     kernel32.CreateToolhelp32Snapshot.restype = ctypes.wintypes.HANDLE
     kernel32.CreateToolhelp32Snapshot.argtypes = [ctypes.wintypes.DWORD, ctypes.wintypes.DWORD]
+    kernel32.OpenProcess.restype = ctypes.wintypes.HANDLE
+    kernel32.OpenProcess.argtypes = [
+        ctypes.wintypes.DWORD,
+        ctypes.wintypes.BOOL,
+        ctypes.wintypes.DWORD,
+    ]
+    kernel32.QueryFullProcessImageNameW.restype = ctypes.wintypes.BOOL
+    kernel32.QueryFullProcessImageNameW.argtypes = [
+        ctypes.wintypes.HANDLE,
+        ctypes.wintypes.DWORD,
+        ctypes.wintypes.LPWSTR,
+        ctypes.POINTER(ctypes.wintypes.DWORD),
+    ]
+    kernel32.CloseHandle.restype = ctypes.wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [ctypes.wintypes.HANDLE]
 
     snapshot = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
     if snapshot == INVALID_HANDLE_VALUE:
@@ -94,11 +110,44 @@ def _get_process_tree_toolhelp(pid: int) -> list[ProcessInfo]:
         while True:
             if pe.th32ParentProcessID == pid:
                 name = pe.szExeFile.decode("utf-8", errors="replace")
+                # Attempt to resolve full executable path via QueryFullProcessImageName.
+                exe_path: str | None = None
+                hproc = kernel32.OpenProcess(
+                    PROCESS_QUERY_LIMITED_INFORMATION, False, pe.th32ProcessID
+                )
+                if hproc and hproc != INVALID_HANDLE_VALUE:
+                    try:
+                        # Start with a generous buffer; retry with a larger one
+                        # if the path is longer than expected.
+                        ERROR_INSUFFICIENT_BUFFER = 0x7A
+                        buf_size = ctypes.wintypes.DWORD(1024)
+                        buf = ctypes.create_unicode_buffer(buf_size.value)
+                        if not kernel32.QueryFullProcessImageNameW(
+                            hproc, 0, buf, ctypes.byref(buf_size)
+                        ):
+                            err = ctypes.get_last_error()
+                            if err == ERROR_INSUFFICIENT_BUFFER:
+                                # The path didn't fit — resize to what Windows reported.
+                                buf = ctypes.create_unicode_buffer(buf_size.value)
+                                if kernel32.QueryFullProcessImageNameW(
+                                    hproc, 0, buf, ctypes.byref(buf_size)
+                                ):
+                                    exe_path = buf.value
+                        else:
+                            exe_path = buf.value
+                    except Exception:  # noqa: BLE001
+                        _log.debug(
+                            "QueryFullProcessImageName failed for pid %d",
+                            pe.th32ProcessID,
+                            exc_info=True,
+                        )
+                    finally:
+                        kernel32.CloseHandle(hproc)
                 infos.append(
                     ProcessInfo(
                         pid=pe.th32ProcessID,
                         name=name,
-                        exe=None,
+                        exe=exe_path,
                         cmdline=None,
                     )
                 )
@@ -116,23 +165,29 @@ def _get_process_tree_toolhelp(pid: int) -> list[ProcessInfo]:
 
 
 def detect_visible_window(pid: int) -> bool | None:
-    """Return True if a visible top-level window is associated with *pid*.
+    """Return True if a visible top-level window is associated with *pid* or its children.
 
     Uses ``EnumWindows`` + ``GetWindowThreadProcessId`` via ctypes on Windows.
+    Also checks direct child processes (e.g. ``conhost.exe``) because console
+    windows are owned by the console host, not the child process itself.
     Returns None on non-Windows platforms.
     """
     if not _IS_WINDOWS:
         return None
 
     try:
-        return _enum_windows_for_pid(pid)
+        # Check windows for the process itself and all its direct children.
+        # Console windows are owned by conhost.exe (a child), not the target pid.
+        children = get_process_tree(pid)
+        all_pids = {pid} | {c.pid for c in children}
+        return _enum_windows_for_pids(all_pids)
     except Exception:  # noqa: BLE001
         _log.debug("EnumWindows failed for pid %d", pid, exc_info=True)
         return None
 
 
-def _enum_windows_for_pid(pid: int) -> bool:
-    """Walk all top-level windows and check if any belong to *pid*."""
+def _enum_windows_for_pids(pids: set[int]) -> bool:
+    """Walk all top-level windows and check if any visible window belongs to *pids*."""
     import ctypes
     import ctypes.wintypes
 
@@ -150,7 +205,7 @@ def _enum_windows_for_pid(pid: int) -> bool:
     def _callback(hwnd: int, _lparam: int) -> bool:
         window_pid = ctypes.wintypes.DWORD()
         user32.GetWindowThreadProcessId(hwnd, ctypes.byref(window_pid))
-        if window_pid.value == pid and user32.IsWindowVisible(hwnd):
+        if window_pid.value in pids and user32.IsWindowVisible(hwnd):
             found[0] = True
             return False  # stop enumeration
         return True  # continue
@@ -166,7 +221,7 @@ def _enum_windows_for_pid(pid: int) -> bool:
     if ret == 0 and not found[0]:
         err = ctypes.get_last_error()
         if err != 0:
-            _log.debug("EnumWindows returned error code %d for pid %d", err, pid)
+            _log.debug("EnumWindows returned error code %d for pids %s", err, pids)
 
     return found[0]
 
