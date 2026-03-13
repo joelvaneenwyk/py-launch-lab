@@ -127,9 +127,7 @@ def _render_per_launcher_sections(results: list[ScenarioResult]) -> list[str]:
         group = grouped[launcher]
         lines.append(f"### Launcher: `{launcher}`")
         lines.append("")
-        lines.append(
-            "| Scenario | Exit | Subsystem | stdout | stderr |"
-        )
+        lines.append("| Scenario | Exit | Subsystem | stdout | stderr |")
         lines.append("| --- | --- | --- | --- | --- |")
         for r in group:
             exit_display = str(r.exit_code) if r.exit_code is not None else "—"

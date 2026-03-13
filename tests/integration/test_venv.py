@@ -493,9 +493,7 @@ class TestVenvDualEntrypoints:
         """The console entrypoint from a dual package must be CUI on Windows."""
         wrapper = venv_with_packages / _SCRIPTS_DIR / "lab-dual-console.exe"
         subsystem = inspect_pe(wrapper)
-        assert subsystem == "CUI", (
-            f"Expected dual console entrypoint to be CUI, got {subsystem}"
-        )
+        assert subsystem == "CUI", f"Expected dual console entrypoint to be CUI, got {subsystem}"
 
     @pytest.mark.skipif(not _IS_WINDOWS, reason="GUI entrypoint .exe only on Windows")
     def test_dual_gui_entrypoint_exists(self, venv_with_packages: Path) -> None:
@@ -508,9 +506,7 @@ class TestVenvDualEntrypoints:
         """The GUI entrypoint from a dual package must be GUI on Windows."""
         wrapper = venv_with_packages / _SCRIPTS_DIR / "lab-dual-gui.exe"
         subsystem = inspect_pe(wrapper)
-        assert subsystem == "GUI", (
-            f"Expected dual GUI entrypoint to be GUI, got {subsystem}"
-        )
+        assert subsystem == "GUI", f"Expected dual GUI entrypoint to be GUI, got {subsystem}"
 
     @pytest.mark.skipif(not _IS_WINDOWS, reason="GUI entrypoint .exe only on Windows")
     def test_dual_gui_entrypoint_runs(self, venv_with_packages: Path) -> None:

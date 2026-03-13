@@ -37,9 +37,7 @@ def test_build_report_writes_file(tmp_path: Path):
     json_dir = tmp_path / "json"
     json_dir.mkdir()
     r = _make_result(exit_code=0)
-    (json_dir / "test-scenario.json").write_text(
-        r.model_dump_json(indent=2), encoding="utf-8"
-    )
+    (json_dir / "test-scenario.json").write_text(r.model_dump_json(indent=2), encoding="utf-8")
     dest = build_report(json_dir=json_dir, output_dir=tmp_path / "out")
     assert dest is not None
     assert dest.exists()
@@ -52,9 +50,7 @@ def test_build_report_writes_findings(tmp_path: Path):
     json_dir = tmp_path / "json"
     json_dir.mkdir()
     r = _make_result(exit_code=0)
-    (json_dir / "test-scenario.json").write_text(
-        r.model_dump_json(indent=2), encoding="utf-8"
-    )
+    (json_dir / "test-scenario.json").write_text(r.model_dump_json(indent=2), encoding="utf-8")
     findings = tmp_path / "findings"
     dest = build_report(
         json_dir=json_dir,
