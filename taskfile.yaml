@@ -10,8 +10,9 @@ tasks:
   default:
     desc: Show available tasks
     cmds:
-      - task: test-all
+      - task: test
       - task: matrix-run
+      - task: report
 
   install:
     desc: Install the project in development mode
