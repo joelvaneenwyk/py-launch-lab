@@ -91,6 +91,30 @@ def _render_header(results: list[ScenarioResult]) -> list[str]:
     if uv_versions:
         lines.append(f"- **uv:** {', '.join(uv_versions)}")
     lines.append("")
+
+    # Overview / purpose section
+    lines.extend([
+        "## Overview",
+        "",
+        "This report documents how Python scripts and entry-point wrappers",
+        "behave under different launchers on Windows. Each row captures the",
+        "observable facts for one scenario: which executable ran, what PE",
+        "subsystem it advertises, whether a console was allocated, and whether",
+        "a visible GUI window appeared.",
+        "",
+        "**Key columns:**",
+        "",
+        "| Column | Meaning |",
+        "| --- | --- |",
+        "| **Console Allocated** | Did Windows allocate a console window "
+        "(conhost) for the process? CUI executables get one by default; GUI "
+        "executables do not. |",
+        "| **GUI Window Spawned** | Did the process create a visible top-level "
+        "GUI window? GUI-subsystem wrappers may spawn one; console scripts "
+        "typically do not. |",
+        "",
+    ])
+
     return lines
 
 
@@ -100,7 +124,7 @@ def _render_summary_table(results: list[ScenarioResult]) -> list[str]:
         "## All Scenarios",
         "",
         "| Scenario | Platform | Launcher | Exit Code | PE Subsystem"
-        " | Console Window | Visible Window |",
+        " | Console Allocated | GUI Window Spawned |",
         "| --- | --- | --- | --- | --- | --- | --- |",
     ]
     for r in results:

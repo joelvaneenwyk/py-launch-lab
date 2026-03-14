@@ -84,8 +84,7 @@ def _try_ollama_summary(
         }
         if anomalies:
             entry["anomalies"] = [
-                {"field": a.field, "expected": a.expected, "actual": a.actual}
-                for a in anomalies
+                {"field": a.field, "expected": a.expected, "actual": a.actual} for a in anomalies
             ]
         scenario_summaries.append(entry)
 
@@ -119,10 +118,15 @@ def _try_ollama_summary(
         # Use curl to avoid adding a requests dependency
         proc_result = subprocess.run(
             [
-                "curl", "-s", "-X", "POST",
+                "curl",
+                "-s",
+                "-X",
+                "POST",
                 f"{ollama_host}/api/generate",
-                "-H", "Content-Type: application/json",
-                "-d", payload,
+                "-H",
+                "Content-Type: application/json",
+                "-d",
+                payload,
             ],
             capture_output=True,
             text=True,
@@ -221,8 +225,7 @@ def build_html_report(
                 "  ANOMALY in %s: %s",
                 r.scenario_id,
                 "; ".join(
-                    f"{a.field}: expected={a.expected}, actual={a.actual}"
-                    for a in anomalies
+                    f"{a.field}: expected={a.expected}, actual={a.actual}" for a in anomalies
                 ),
             )
 
@@ -364,6 +367,26 @@ th {
 }
 th:hover { background: #3a3f47; }
 th .sort-arrow { margin-left: 4px; font-size: 0.7rem; opacity: 0.6; }
+th[title] { position: relative; }
+th[title]:hover::after {
+    content: attr(title);
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1b1f23;
+    color: #e1e4e8;
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 0.78rem;
+    font-weight: 400;
+    white-space: normal;
+    width: max-content;
+    max-width: 280px;
+    z-index: 100;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    pointer-events: none;
+}
 
 td {
     padding: 0.5rem 0.75rem;
@@ -601,7 +624,7 @@ def _status_badge(anomalies: list[Anomaly]) -> str:
     if not anomalies:
         return '<span class="badge badge-pass">\u2713 OK</span>'
     n = len(anomalies)
-    label = f"\u26A0 {n} anomal{'y' if n == 1 else 'ies'}"
+    label = f"\u26a0 {n} anomal{'y' if n == 1 else 'ies'}"
     return f'<span class="badge badge-anomaly">{label}</span>'
 
 
@@ -609,11 +632,10 @@ def _render_anomaly_bubble(anomalies: list[Anomaly]) -> str:
     """Render the expandable anomaly explanation bubble."""
     parts: list[str] = []
     parts.append('<div class="anomaly-bubble">')
-    parts.append("<strong>\u26A0 Unexpected behaviour detected:</strong>")
+    parts.append("<strong>\u26a0 Unexpected behaviour detected:</strong>")
     for a in anomalies:
         parts.append(
-            f'<div style="margin-top: 0.5rem;">'
-            f'<span class="anomaly-field">{_esc(a.field)}</span>'
+            f'<div style="margin-top: 0.5rem;"><span class="anomaly-field">{_esc(a.field)}</span>'
         )
         parts.append('<div class="expected-vs-actual">')
         parts.append(f'<span class="expected">Expected: {_esc(a.expected)}</span> \u2192 ')
@@ -623,7 +645,7 @@ def _render_anomaly_bubble(anomalies: list[Anomaly]) -> str:
         if a.doc_url:
             parts.append(
                 f'<a class="doc-link" href="{_esc(a.doc_url)}" '
-                f'target="_blank">\U0001F4D6 More details \u2192</a>'
+                f'target="_blank">\U0001f4d6 More details \u2192</a>'
             )
         parts.append("</div>")
     parts.append("</div>")
@@ -640,16 +662,16 @@ def _collect_unique_values(
     subsystems: set[str] = set()
     statuses: set[str] = set()
     console_vals: set[str] = set()
-    visible_vals: set[str] = set()
+    gui_window_vals: set[str] = set()
 
     for r in results:
         launchers.add(str(r.launcher))
         platforms.add(str(r.platform))
         subsystems.add(str(r.pe_subsystem) if r.pe_subsystem else "N/A")
         anomalies = anomaly_map.get(r.scenario_id, [])
-        statuses.add("\u2713 OK" if not anomalies else "\u26A0 Anomaly")
+        statuses.add("\u2713 OK" if not anomalies else "\u26a0 Anomaly")
         console_vals.add(_bool_display(r.console_window_detected))
-        visible_vals.add(_bool_display(r.visible_window_detected))
+        gui_window_vals.add(_bool_display(r.visible_window_detected))
 
     return {
         "launcher": sorted(launchers),
@@ -657,7 +679,7 @@ def _collect_unique_values(
         "subsystem": sorted(subsystems),
         "status": sorted(statuses),
         "console": sorted(console_vals),
-        "visible": sorted(visible_vals),
+        "gui_window": sorted(gui_window_vals),
     }
 
 
@@ -737,13 +759,53 @@ def _render_html_report(
         )
     parts.append("</div>")
 
+    # Overview / purpose section
+    parts.append("<h2>Overview</h2>")
+    parts.append(
+        "<p><strong>Python Launch Lab</strong> is a conformance and evidence-gathering "
+        "tool that systematically tests how different Python launchers behave on "
+        "Windows. It exercises every common way to start a Python process &mdash; "
+        "the standard <code>python.exe</code> / <code>pythonw.exe</code> interpreters, "
+        "the <code>uv</code> tool runner (<code>uv run</code>, <code>uvx</code>, "
+        "<code>uvw</code>), virtual-environment entry-point wrappers generated by "
+        "<code>pip</code> or <code>uv</code>, and the custom <code>pyshim-win</code> "
+        "GUI-subsystem shim.</p>"
+    )
+    parts.append(
+        "<p>The goal is to answer: <em>&ldquo;Does each launcher create the expected "
+        "kind of process?&rdquo;</em> Specifically:</p>"
+    )
+    parts.append("<ul>")
+    parts.append(
+        "<li><strong>Console Allocated</strong> &mdash; Did Windows allocate a console "
+        "host (<code>conhost.exe</code>) for the process? Console (CUI) executables "
+        "do this by default; GUI executables should not.</li>"
+    )
+    parts.append(
+        "<li><strong>GUI Window Spawned</strong> &mdash; Did the process create a "
+        "visible top-level window? GUI entry-point scripts and GUI-subsystem "
+        "launchers may do this; console scripts should not.</li>"
+    )
+    parts.append(
+        "<li><strong>PE Subsystem</strong> &mdash; Is the executable marked as "
+        "<code>CUI</code> (console) or <code>GUI</code> (graphical) in its "
+        "Portable Executable header? This determines the Windows loader&rsquo;s "
+        "default behaviour.</li>"
+    )
+    parts.append("</ul>")
+    parts.append(
+        "<p>Rows highlighted in orange indicate <strong>anomalies</strong> &mdash; "
+        "cases where observed behaviour differs from what the PE subsystem and "
+        "scenario type predict. Expand an anomaly row to see a detailed "
+        "explanation of what went wrong and why.</p>"
+    )
+
     # AI summary (if available)
     if ai_summary:
         model = os.environ.get("OLLAMA_MODEL", "llama3.2")
         parts.append('<div class="ai-summary">')
         parts.append(
-            f'<h3>\U0001F916 AI Analysis '
-            f'<span class="model-tag">{_esc(model)}</span></h3>'
+            f'<h3>\U0001f916 AI Analysis <span class="model-tag">{_esc(model)}</span></h3>'
         )
         for para in ai_summary.split("\n\n"):
             para = para.strip()
@@ -771,24 +833,41 @@ def _render_html_report(
     parts.append("<h2>All Scenarios</h2>")
     parts.append('<table id="results-table">')
 
+    # Column definitions: (display_name, tooltip)
     columns = [
-        "Scenario",
-        "Status",
-        "Platform",
-        "Launcher",
-        "Command Line",
-        "Exit Code",
-        "PE Subsystem",
-        "Console Window",
-        "Visible Window",
-        "stdout",
-        "stderr",
+        ("Scenario", "Unique identifier for the test scenario"),
+        ("Status", "Whether the scenario matched expected behaviour or had anomalies"),
+        ("Platform", "Operating system platform (e.g. win32, linux)"),
+        (
+            "Launcher",
+            "The executable used to start the process (python, uv, uvx, venv wrapper, etc.)",
+        ),
+        ("Command Line", "The full command that was executed for this scenario"),
+        ("Exit Code", "Process exit code — 0 means success, non-zero indicates an error"),
+        (
+            "PE Subsystem",
+            "Windows PE subsystem of the resolved executable: CUI (console) or GUI (graphical)",
+        ),
+        (
+            "Console Allocated",
+            "Whether Windows allocated a console window (conhost.exe) for the process. "
+            "CUI executables get a console by default; GUI executables do not.",
+        ),
+        (
+            "GUI Window Spawned",
+            "Whether the process created a visible top-level GUI window. "
+            "GUI-subsystem entry-point wrappers may spawn a window; "
+            "console scripts typically do not.",
+        ),
+        ("stdout", "Whether the process produced output on its standard output stream"),
+        ("stderr", "Whether the process produced output on its standard error stream"),
     ]
     parts.append("<thead>")
     parts.append("<tr>")
-    for col in columns:
+    for col_name, col_tip in columns:
         parts.append(
-            f'<th>{_esc(col)} <span class="sort-arrow">\u21C5</span></th>'
+            f'<th title="{_esc(col_tip)}">{_esc(col_name)} '
+            f'<span class="sort-arrow">\u21c5</span></th>'
         )
     parts.append("</tr>")
 
@@ -802,9 +881,9 @@ def _render_html_report(
     parts.append('<th><input type="text" placeholder="Filter\u2026"></th>')
     parts.append(f"<th>{_render_filter_select(unique_vals['subsystem'])}</th>")
     parts.append(f"<th>{_render_filter_select(unique_vals['console'])}</th>")
-    parts.append(f"<th>{_render_filter_select(unique_vals['visible'])}</th>")
-    parts.append(f'<th>{_render_filter_select(["Yes", "No", "N/A"])}</th>')
-    parts.append(f'<th>{_render_filter_select(["Yes", "No", "N/A"])}</th>')
+    parts.append(f"<th>{_render_filter_select(unique_vals['gui_window'])}</th>")
+    parts.append(f"<th>{_render_filter_select(['Yes', 'No', 'N/A'])}</th>")
+    parts.append(f"<th>{_render_filter_select(['Yes', 'No', 'N/A'])}</th>")
     parts.append("</tr>")
     parts.append("</thead>")
 
@@ -817,17 +896,15 @@ def _render_html_report(
         detail_attr = f' data-detail-row="{detail_id}"' if anomalies else ""
 
         cmd_line = _relative_command_line(r)
+        n_columns = len(columns)
 
         parts.append(f'<tr class="{row_class}"{detail_attr}>')
         parts.append(f"<td>{_esc(r.scenario_id)}</td>")
         parts.append(f"<td>{_status_badge(anomalies)}</td>")
         parts.append(f"<td>{_esc(r.platform)}</td>")
+        parts.append(f'<td><span class="launcher-tag">{_esc(r.launcher)}</span></td>')
         parts.append(
-            f'<td><span class="launcher-tag">{_esc(r.launcher)}</span></td>'
-        )
-        parts.append(
-            f'<td><span class="cmd-line" title="{_esc(cmd_line)}">'
-            f"{_esc(cmd_line)}</span></td>"
+            f'<td><span class="cmd-line" title="{_esc(cmd_line)}">{_esc(cmd_line)}</span></td>'
         )
         parts.append(f"<td>{_exit_badge(r.exit_code)}</td>")
         parts.append(f"<td>{_esc(r.pe_subsystem)}</td>")
@@ -841,7 +918,7 @@ def _render_html_report(
         if anomalies:
             parts.append(
                 f'<tr class="anomaly-detail-row" id="{detail_id}">'
-                f'<td colspan="{len(columns)}">'
+                f'<td colspan="{n_columns}">'
                 f"{_render_anomaly_bubble(anomalies)}"
                 f"</td></tr>"
             )

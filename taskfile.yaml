@@ -79,9 +79,11 @@ tasks:
       - uv run py-launch-lab matrix run {{if .CUSTOM_UV}}--custom-uv {{.CUSTOM_UV}}{{end}}
 
   report:
-    desc: Build the report
+    desc: Build the report (auto-runs matrix if no artifacts exist)
+    deps:
+      - setup-custom-uv
     cmds:
-      - uv run py-launch-lab report build {{if .FORCE}}--force{{end}}
+      - uv run py-launch-lab report build {{if .CUSTOM_UV}}--custom-uv {{.CUSTOM_UV}}{{end}} {{if .FORCE}}--force{{end}}
     vars:
       FORCE: '{{.FORCE | default ""}}'
 

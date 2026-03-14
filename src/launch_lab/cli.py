@@ -75,6 +75,101 @@ def _init_custom_uv(source: str) -> None:
         raise typer.Exit(1) from exc
 
 
+def _run_matrix(
+    output_dir: str = "artifacts/json",
+    custom_uv: str | None = None,
+) -> None:
+    """Run the full scenario matrix and save artifacts.
+
+    This is the shared implementation used by both ``matrix run`` and
+    ``report build`` (when no JSON artifacts exist yet).
+    """
+    import sys as _sys
+
+    from launch_lab.matrix import get_matrix
+    from launch_lab.runner import (
+        _os_version,
+        _python_version,
+        _uv_version,
+        is_uv_available,
+        provision_matrix_venv,
+        run_scenario,
+    )
+
+    if custom_uv:
+        _init_custom_uv(custom_uv)
+
+    matrix = get_matrix()
+    uv_available = is_uv_available()
+
+    # Print environment info
+    console.print("[bold]Environment[/bold]")
+    console.print(f"  OS:     {_os_version()}")
+    console.print(f"  Python: {_python_version()}")
+    uv_ver = _uv_version()
+    console.print(f"  uv:     {uv_ver or 'not available'}")
+    uv_src = get_custom_uv_source()
+    if uv_src:
+        console.print(f"  uv src: [cyan]{uv_src}[/cyan]")
+    console.print("")
+
+    # Provision the matrix venv up-front so the (potentially slow)
+    # venv creation + package install step is clearly visible before
+    # any scenarios start running.
+    has_venv_scenarios = any(s.launcher == "venv-direct" for s in matrix)
+    if has_venv_scenarios:
+        console.print("[bold]Provisioning matrix venv[/bold]")
+        console.print(
+            "  Creating a fresh venv with the active uv and installing "
+            "fixture packages so entrypoint wrappers are generated …"
+        )
+        venv_dir = provision_matrix_venv()
+        console.print(f"  [green]Venv ready:[/green] {venv_dir}")
+        console.print("")
+
+    console.print(f"[bold]Running {len(matrix)} scenarios …[/bold]")
+    executed = 0
+    skipped = 0
+    failed: list[str] = []
+    for scenario in matrix:
+        if scenario.windows_only and _sys.platform != "win32":
+            console.print(f"  [dim]SKIP[/dim] {scenario.scenario_id} (Windows-only)")
+            skipped += 1
+            continue
+        if scenario.requires_uv and not uv_available:
+            console.print(f"  [dim]SKIP[/dim] {scenario.scenario_id} (uv not available)")
+            skipped += 1
+            continue
+        if scenario.skip_reason:
+            console.print(f"  [dim]SKIP[/dim] {scenario.scenario_id} ({scenario.skip_reason})")
+            skipped += 1
+            continue
+        console.print(f"  RUN  {scenario.scenario_id} … ", end="")
+        result = run_scenario(
+            scenario,
+            save_artifact=True,
+            artifact_dir=Path(output_dir),
+        )
+        if result.exit_code == 0:
+            console.print("[green]OK[/green] (exit=0)")
+        else:
+            console.print(f"[red]FAIL[/red] (exit={result.exit_code})")
+            failed.append(scenario.scenario_id)
+            if result.stderr_text:
+                for line in result.stderr_text.strip().splitlines():
+                    console.print(f"        [dim]{line}[/dim]")
+        executed += 1
+    passed = executed - len(failed)
+    console.print(
+        f"\nDone: {executed} run, {passed} passed, {len(failed)} failed, {skipped} skipped."
+    )
+    if failed:
+        console.print("\n[red]Failed scenarios:[/red]")
+        for sid in failed:
+            console.print(f"  • {sid}")
+        raise typer.Exit(1)
+
+
 @app.callback(invoke_without_command=True)
 def main(
     version: bool = typer.Option(False, "--version", "-V", help="Show version and exit."),
@@ -215,92 +310,13 @@ def matrix_cmd(
     ),
 ) -> None:
     """Run or list the full scenario matrix."""
-    if custom_uv:
-        _init_custom_uv(custom_uv)
-
     if action == "list":
         from launch_lab.matrix import get_matrix
 
         for scenario in get_matrix():
             console.print(f"  {scenario.scenario_id}")
     elif action == "run":
-        import sys as _sys
-
-        from launch_lab.matrix import get_matrix
-        from launch_lab.runner import (
-            _os_version,
-            _python_version,
-            _uv_version,
-            is_uv_available,
-            provision_matrix_venv,
-            run_scenario,
-        )
-
-        matrix = get_matrix()
-        uv_available = is_uv_available()
-
-        # Print environment info
-        console.print("[bold]Environment[/bold]")
-        console.print(f"  OS:     {_os_version()}")
-        console.print(f"  Python: {_python_version()}")
-        uv_ver = _uv_version()
-        console.print(f"  uv:     {uv_ver or 'not available'}")
-        uv_src = get_custom_uv_source()
-        if uv_src:
-            console.print(f"  uv src: [cyan]{uv_src}[/cyan]")
-        console.print("")
-
-        # Provision the matrix venv up-front so the (potentially slow)
-        # venv creation + package install step is clearly visible before
-        # any scenarios start running.
-        has_venv_scenarios = any(s.launcher == "venv-direct" for s in matrix)
-        if has_venv_scenarios:
-            console.print("[bold]Provisioning matrix venv[/bold]")
-            console.print(
-                "  Creating a fresh venv with the active uv and installing "
-                "fixture packages so entrypoint wrappers are generated …"
-            )
-            venv_dir = provision_matrix_venv()
-            console.print(f"  [green]Venv ready:[/green] {venv_dir}")
-            console.print("")
-
-        console.print(f"[bold]Running {len(matrix)} scenarios …[/bold]")
-        executed = 0
-        skipped = 0
-        failed: list[str] = []
-        for scenario in matrix:
-            if scenario.windows_only and _sys.platform != "win32":
-                console.print(f"  [dim]SKIP[/dim] {scenario.scenario_id} (Windows-only)")
-                skipped += 1
-                continue
-            if scenario.requires_uv and not uv_available:
-                console.print(f"  [dim]SKIP[/dim] {scenario.scenario_id} (uv not available)")
-                skipped += 1
-                continue
-            if scenario.skip_reason:
-                console.print(f"  [dim]SKIP[/dim] {scenario.scenario_id} ({scenario.skip_reason})")
-                skipped += 1
-                continue
-            console.print(f"  RUN  {scenario.scenario_id} … ", end="")
-            result = run_scenario(scenario, save_artifact=True, artifact_dir=Path(output))
-            if result.exit_code == 0:
-                console.print("[green]OK[/green] (exit=0)")
-            else:
-                console.print(f"[red]FAIL[/red] (exit={result.exit_code})")
-                failed.append(scenario.scenario_id)
-                if result.stderr_text:
-                    for line in result.stderr_text.strip().splitlines():
-                        console.print(f"        [dim]{line}[/dim]")
-            executed += 1
-        passed = executed - len(failed)
-        console.print(
-            f"\nDone: {executed} run, {passed} passed, {len(failed)} failed, {skipped} skipped."
-        )
-        if failed:
-            console.print("\n[red]Failed scenarios:[/red]")
-            for sid in failed:
-                console.print(f"  • {sid}")
-            raise typer.Exit(1)
+        _run_matrix(output_dir=output, custom_uv=custom_uv)
     else:
         console.print(f"[red]Unknown action:[/red] {action}")
         raise typer.Exit(1)
@@ -317,15 +333,43 @@ def report_cmd(
     force: bool = typer.Option(
         False, "--force", help="Force regeneration even if the report is up-to-date."
     ),
+    custom_uv: str | None = typer.Option(
+        None,
+        "--custom-uv",
+        help=(
+            "Custom uv source: a path to a uv binary, a Rust source directory, "
+            "or a git URL (e.g. https://github.com/joelvaneenwyk/uv). "
+            "When set, all uv/uvx/uvw invocations use this build."
+        ),
+    ),
 ) -> None:
-    """Build reports from collected artifacts."""
+    """Build reports from collected artifacts.
+
+    If no JSON artifacts exist yet, a full matrix run is executed first
+    to generate them.
+    """
     _setup_logging(verbose=True)
 
+    if custom_uv:
+        _init_custom_uv(custom_uv)
+
     if action == "build":
+        from launch_lab.collect import load_all_results
         from launch_lab.html_report import build_html_report
         from launch_lab.report import build_report
 
         json_path = Path(json_dir)
+
+        # Auto-run the matrix if no JSON artifacts are present.
+        results = load_all_results(json_path)
+        if not results:
+            console.print(
+                f"[yellow]No JSON results found in[/yellow] [cyan]{json_path.resolve()}[/cyan]"
+            )
+            console.print("[bold]Running scenario matrix to generate artifacts …[/bold]")
+            console.print("")
+            _run_matrix(output_dir=str(json_path), custom_uv=custom_uv)
+            console.print("")
 
         console.print(f"[bold]Building reports[/bold] (force={force})")
         console.print(f"  JSON source: [cyan]{json_path.resolve()}[/cyan]")
