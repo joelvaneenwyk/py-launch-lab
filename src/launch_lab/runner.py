@@ -541,7 +541,15 @@ def run_scenario(
     except FileNotFoundError:
         exit_code = None
         stdout_text = None
-        stderr_text = f"Executable not found: {cmd[0]}"
+        hint = ""
+        if scenario.launcher == "pyshim-win":
+            hint = (
+                " — pyshim-win must be built from the Rust crate: "
+                "cd crates/pyshim-win && cargo build --release "
+                "(requires Rust toolchain from https://rustup.rs)"
+            )
+        stderr_text = f"Executable not found: {cmd[0]}{hint}"
+        logger.warning("Scenario %s: %s", scenario.scenario_id, stderr_text)
         stdout_available = False
         stderr_available = False
 
@@ -583,8 +591,8 @@ def _resolve_launcher(launcher: str) -> str:
     When a custom uv has been configured via ``--custom-uv``, all
     ``uv`` / ``uvx`` / ``uvw`` launchers are resolved to the custom build
     directory.  For ``pyshim-win`` the binary lives inside the Cargo build
-    tree.  Otherwise, if the binary is already on PATH it is returned
-    unchanged.
+    tree and will be built automatically if not found.  Otherwise, if the
+    binary is already on PATH it is returned unchanged.
     """
     # Custom uv override — resolve uv-family binaries from the provider.
     if launcher in ("uv", "uvx", "uvw") and is_custom_uv_configured():
@@ -594,15 +602,83 @@ def _resolve_launcher(launcher: str) -> str:
         return launcher
 
     if launcher == "pyshim-win":
-        project_root = Path(__file__).resolve().parents[2]
-        for profile in ("release", "debug"):
-            candidate = (
-                project_root / "crates" / "pyshim-win" / "target" / profile / "pyshim-win.exe"
-            )
-            if candidate.is_file():
-                return str(candidate)
+        resolved = _resolve_pyshim_win()
+        if resolved is not None:
+            return resolved
 
     return launcher
+
+
+def _resolve_pyshim_win() -> str | None:
+    """Find or build the ``pyshim-win`` shim binary.
+
+    Looks for a pre-built binary in the Cargo target directory (release
+    first, then debug).  If not found, attempts to build it automatically
+    with ``cargo build --release``.
+
+    Returns the absolute path to the binary, or ``None`` if the build
+    fails or the crate directory doesn't exist.
+    """
+    project_root = Path(__file__).resolve().parents[2]
+    crate_dir = project_root / "crates" / "pyshim-win"
+
+    if not crate_dir.is_dir():
+        logger.warning(
+            "pyshim-win crate directory not found at %s — shim scenarios will fail",
+            crate_dir,
+        )
+        return None
+
+    # Check for an existing build (release first, then debug)
+    for profile in ("release", "debug"):
+        candidate = crate_dir / "target" / profile / f"pyshim-win{_EXE_SUFFIX}"
+        if candidate.is_file():
+            logger.info("Found existing pyshim-win binary: %s", candidate)
+            return str(candidate)
+
+    # Not found — try building it
+    logger.info(
+        "pyshim-win binary not found — building from source in %s …",
+        crate_dir,
+    )
+    cargo_toml = crate_dir / "Cargo.toml"
+    if not cargo_toml.is_file():
+        logger.warning("No Cargo.toml in %s — cannot build pyshim-win", crate_dir)
+        return None
+
+    try:
+        subprocess.check_call(
+            ["cargo", "build", "--release"],
+            cwd=str(crate_dir),
+            timeout=300,
+        )
+    except FileNotFoundError:
+        logger.warning(
+            "cargo is not on PATH — cannot build pyshim-win. "
+            "Install Rust (https://rustup.rs) or build manually: "
+            "cd %s && cargo build --release",
+            crate_dir,
+        )
+        return None
+    except subprocess.CalledProcessError as exc:
+        logger.warning(
+            "Failed to build pyshim-win (exit code %s). "
+            "Build manually: cd %s && cargo build --release",
+            exc.returncode,
+            crate_dir,
+        )
+        return None
+
+    release_bin = crate_dir / "target" / "release" / f"pyshim-win{_EXE_SUFFIX}"
+    if release_bin.is_file():
+        logger.info("pyshim-win built successfully: %s", release_bin)
+        return str(release_bin)
+
+    logger.warning(
+        "cargo build succeeded but pyshim-win binary not found at %s",
+        release_bin,
+    )
+    return None
 
 
 def _build_command(scenario: Scenario) -> list[str]:

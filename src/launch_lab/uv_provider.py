@@ -274,8 +274,10 @@ def _cargo_build(source_dir: Path) -> Path:
     """Run ``cargo build --release`` and return the directory containing binaries.
 
     The uv project uses a workspace layout.  We build the ``uv`` binary
-    specifically using ``--package uv``.  If that fails (e.g. the project
-    structure is different) we fall back to a plain ``cargo build --release``.
+    specifically using ``--package uv``.  On Windows, we also build the
+    ``uvw`` binary (which requires the ``windows-gui-bin`` feature).
+    If the ``--package uv`` build fails we fall back to a plain
+    ``cargo build --release``.
     """
     logger.info("Building uv from source in %s (this may take several minutes) …", source_dir)
 
@@ -306,7 +308,7 @@ def _cargo_build(source_dir: Path) -> Path:
     if not built:
         raise RuntimeError(f"Cargo build failed in {source_dir}")
 
-    # Verify the binary exists
+    # Verify the uv binary exists
     uv_bin = target_dir / f"uv{_EXE_SUFFIX}"
     if not uv_bin.is_file():
         contents = list(target_dir.iterdir()) if target_dir.exists() else "directory does not exist"
@@ -316,7 +318,58 @@ def _cargo_build(source_dir: Path) -> Path:
         )
 
     logger.info("Custom uv binary built: %s", uv_bin)
+
+    # --- Build uvw on Windows ---
+    # The uvw binary is a separate [[bin]] target in the uv crate that
+    # requires the "windows-gui-bin" feature flag.
+    if _IS_WINDOWS:
+        _cargo_build_uvw(source_dir, target_dir)
+
     return target_dir
+
+
+def _cargo_build_uvw(source_dir: Path, target_dir: Path) -> None:
+    """Build the ``uvw`` binary from the uv workspace (Windows only).
+
+    ``uvw`` is defined as a ``[[bin]]`` target in the ``uv`` crate with
+    ``required-features = ["windows-gui-bin"]``.  We build it separately
+    because the default ``cargo build --package uv`` does not enable that
+    feature.
+    """
+    uvw_bin = target_dir / f"uvw{_EXE_SUFFIX}"
+    build_cmd = [
+        "cargo",
+        "build",
+        "--release",
+        "--package",
+        "uv",
+        "--features",
+        "windows-gui-bin",
+        "--bin",
+        "uvw",
+    ]
+    try:
+        logger.info("Building uvw: %s", " ".join(build_cmd))
+        subprocess.check_call(
+            build_cmd,
+            cwd=str(source_dir),
+            timeout=1800,
+        )
+    except subprocess.CalledProcessError:
+        logger.warning(
+            "Failed to build uvw (this is optional — uvw scenarios will "
+            "fall back to system PATH). Command: %s",
+            " ".join(build_cmd),
+        )
+        return
+    except FileNotFoundError:
+        logger.warning("cargo not found; skipping uvw build")
+        return
+
+    if uvw_bin.is_file():
+        logger.info("Custom uvw binary built: %s", uvw_bin)
+    else:
+        logger.warning("uvw build completed but binary not found at %s", uvw_bin)
 
 
 # ---------------------------------------------------------------------------
