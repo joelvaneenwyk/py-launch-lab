@@ -15,6 +15,8 @@ defaults (None / empty list) on non-Windows platforms.
 
 from __future__ import annotations
 
+import hashlib
+import logging
 import platform
 import shutil
 import subprocess
@@ -34,6 +36,8 @@ from launch_lab.inspect_pe import inspect_pe
 from launch_lab.matrix import Scenario
 from launch_lab.models import LauncherKind, ScenarioResult
 from launch_lab.uv_provider import get_uv_binary, is_custom_uv_configured
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Project paths
@@ -99,33 +103,84 @@ def _parse_launcher(value: str) -> LauncherKind:
 _venv_provisioned: dict[str, Path] = {}
 
 
+def _uv_version_hash() -> str:
+    """Return a short hash based on the effective uv version string.
+
+    This is used to namespace the matrix venv cache directory so that
+    different uv versions (or custom builds) each get their own venv.
+    """
+    ver = _uv_version() or "unknown"
+    return hashlib.sha256(ver.encode()).hexdigest()[:10]
+
+
 def _ensure_matrix_venv() -> Path:
     """Create (or reuse) a cached venv for ``venv-direct`` matrix scenarios.
 
-    The venv is created in ``.cache/matrix_venv/`` within the project root
-    using ``uv venv``.  All fixture packages (pkg_console, pkg_gui, pkg_dual)
-    are installed into it.
+    The venv is stored in ``.cache/matrix_venv_<uv-hash>/`` so that
+    different uv versions each get an independent venv.  When a custom uv
+    is configured the venv is **always** recreated (deleted then rebuilt)
+    so that entrypoint wrappers are regenerated with the custom uv — this
+    is critical for reproducing issues like the CUI-pythonw bug.
 
     Returns the venv root directory.
     """
-    cache_key = "matrix_venv"
+    uv_hash = _uv_version_hash()
+    cache_key = f"matrix_venv_{uv_hash}"
+
     if cache_key in _venv_provisioned:
         return _venv_provisioned[cache_key]
 
-    venv_dir = _CACHE_DIR / "matrix_venv"
+    uv_bin = get_uv_binary("uv")
+    uv_ver = _uv_version() or "unknown"
+    venv_dir = _CACHE_DIR / f"matrix_venv_{uv_hash}"
     scripts_dir = venv_dir / _SCRIPTS_DIR
     python_exe = scripts_dir / f"python{_EXE_SUFFIX}"
 
-    # Create the venv if the python executable is missing.
-    uv_bin = get_uv_binary("uv")
-    if not python_exe.exists():
-        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        subprocess.check_call([uv_bin, "venv", str(venv_dir)], timeout=60)
+    logger.info(
+        "Provisioning matrix venv  (uv=%s, hash=%s, dir=%s)",
+        uv_ver,
+        uv_hash,
+        venv_dir,
+    )
 
-    # Install fixture packages (idempotent — uv pip handles re-installs).
+    # ----- Decide whether to (re)create the venv -----
+    need_create = False
+
+    if is_custom_uv_configured():
+        if venv_dir.exists():
+            logger.info(
+                "Custom uv is active — removing existing venv to force "
+                "re-creation of entrypoint wrappers: %s",
+                venv_dir,
+            )
+            shutil.rmtree(venv_dir, ignore_errors=True)
+        need_create = True
+    elif not python_exe.exists():
+        need_create = True
+
+    # ----- Create the venv -----
+    if need_create:
+        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        logger.info(
+            "Creating new venv with '%s venv %s' …",
+            uv_bin,
+            venv_dir,
+        )
+        subprocess.check_call([uv_bin, "venv", str(venv_dir)], timeout=60)
+        logger.info("Venv created: %s", venv_dir)
+    else:
+        logger.info("Reusing existing venv: %s", venv_dir)
+
+    # ----- Install fixture packages -----
     for pkg in ("pkg_console", "pkg_gui", "pkg_dual"):
         pkg_path = _FIXTURES_DIR / pkg
         if pkg_path.exists():
+            logger.info(
+                "Installing fixture package '%s' into venv (uv pip install --python %s %s) …",
+                pkg,
+                python_exe,
+                pkg_path,
+            )
             subprocess.check_call(
                 [
                     uv_bin,
@@ -137,9 +192,33 @@ def _ensure_matrix_venv() -> Path:
                 ],
                 timeout=120,
             )
+            logger.info("  ✓ %s installed", pkg)
 
+    # ----- Log generated entrypoints for visibility -----
+    if scripts_dir.exists():
+        entrypoints = sorted(
+            p.name for p in scripts_dir.iterdir() if p.is_file() and p.stem.startswith("lab-")
+        )
+        if entrypoints:
+            logger.info(
+                "Generated entrypoint wrappers in %s: %s",
+                scripts_dir,
+                ", ".join(entrypoints),
+            )
+
+    logger.info("Matrix venv ready: %s", venv_dir)
     _venv_provisioned[cache_key] = venv_dir
     return venv_dir
+
+
+def provision_matrix_venv() -> Path:
+    """Public wrapper for :func:`_ensure_matrix_venv`.
+
+    Called by the CLI to eagerly provision the venv before the scenario
+    loop begins so the user sees the venv-creation output as a distinct
+    step.
+    """
+    return _ensure_matrix_venv()
 
 
 def _build_venv_command(scenario: Scenario) -> list[str]:

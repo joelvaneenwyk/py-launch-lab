@@ -16,6 +16,7 @@ tasks:
       - task: report
 
   setup-custom-uv:
+    aliases: [setup]
     desc: Build/resolve a custom uv binary (set CUSTOM_UV=<path-or-url>)
     status:
       - "{{if .CUSTOM_UV}}false{{else}}true{{end}}"

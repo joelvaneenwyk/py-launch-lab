@@ -232,6 +232,7 @@ def matrix_cmd(
             _python_version,
             _uv_version,
             is_uv_available,
+            provision_matrix_venv,
             run_scenario,
         )
 
@@ -249,7 +250,21 @@ def matrix_cmd(
             console.print(f"  uv src: [cyan]{uv_src}[/cyan]")
         console.print("")
 
-        console.print(f"Running {len(matrix)} scenarios ...")
+        # Provision the matrix venv up-front so the (potentially slow)
+        # venv creation + package install step is clearly visible before
+        # any scenarios start running.
+        has_venv_scenarios = any(s.launcher == "venv-direct" for s in matrix)
+        if has_venv_scenarios:
+            console.print("[bold]Provisioning matrix venv[/bold]")
+            console.print(
+                "  Creating a fresh venv with the active uv and installing "
+                "fixture packages so entrypoint wrappers are generated …"
+            )
+            venv_dir = provision_matrix_venv()
+            console.print(f"  [green]Venv ready:[/green] {venv_dir}")
+            console.print("")
+
+        console.print(f"[bold]Running {len(matrix)} scenarios …[/bold]")
         executed = 0
         skipped = 0
         failed: list[str] = []
