@@ -293,7 +293,8 @@ def scenario_run(
     console.print(f"  console_window     = {result.console_window_detected}")
     console.print(f"  visible_window     = {result.visible_window_detected}")
     console.print(f"  processes          = {len(result.processes)}")
-    console.print(f"[green]Artifact saved -> {output}/{scenario_id}.json[/green]")
+    from launch_lab.collect import artifact_filename
+    console.print(f"[green]Artifact saved -> {output}/{artifact_filename(result)}[/green]")
 
 
 @app.command("matrix")

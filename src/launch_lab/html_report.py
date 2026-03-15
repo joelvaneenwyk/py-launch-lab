@@ -21,7 +21,7 @@ import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
-from launch_lab.collect import load_all_results
+from launch_lab.collect import artifact_filename, load_all_results
 from launch_lab.expectations import Anomaly, check_expectations
 from launch_lab.models import ScenarioResult
 
@@ -202,8 +202,12 @@ def build_html_report(
         logger.warning("No JSON result files found in %s", json_dir.resolve())
         return None
 
+    # Sort results by uv version then scenario id so that rows from the same
+    # uv build are grouped together in the report.
+    results.sort(key=lambda r: (r.uv_version or "", r.scenario_id))
+
     for r in results:
-        src_file = json_dir / f"{r.scenario_id}.json"
+        src_file = json_dir / artifact_filename(r)
         logger.info(
             "  Loaded: %-40s (exit=%s, launcher=%s, pe=%s) from %s",
             r.scenario_id,
@@ -219,7 +223,7 @@ def build_html_report(
     anomaly_map: dict[str, list[Anomaly]] = {}
     for r in results:
         anomalies = check_expectations(r)
-        anomaly_map[r.scenario_id] = anomalies
+        anomaly_map[_result_key(r)] = anomalies
         if anomalies:
             logger.warning(
                 "  ANOMALY in %s: %s",
@@ -597,6 +601,19 @@ document.addEventListener('DOMContentLoaded', function() {
 # -- rendering helpers -------------------------------------------------------
 
 
+def _result_key(r: ScenarioResult) -> str:
+    """Return a unique key for *r* suitable for use as a dict key.
+
+    When the result carries a ``uv_version_hash`` the key is
+    ``<scenario_id>__<hash>`` so that results from different uv builds
+    never collide.  Falls back to ``scenario_id`` alone for legacy results
+    that predate the versioned artifact naming scheme.
+    """
+    if r.uv_version_hash:
+        return f"{r.scenario_id}__{r.uv_version_hash}"
+    return r.scenario_id
+
+
 def _esc(value: object) -> str:
     """HTML-escape a value, showing 'N/A' for None."""
     if value is None:
@@ -659,6 +676,7 @@ def _collect_unique_values(
     """Collect unique values for each filterable column."""
     launchers: set[str] = set()
     platforms: set[str] = set()
+    uv_versions: set[str] = set()
     subsystems: set[str] = set()
     statuses: set[str] = set()
     console_vals: set[str] = set()
@@ -667,8 +685,9 @@ def _collect_unique_values(
     for r in results:
         launchers.add(str(r.launcher))
         platforms.add(str(r.platform))
+        uv_versions.add(str(r.uv_version) if r.uv_version else "N/A")
         subsystems.add(str(r.pe_subsystem) if r.pe_subsystem else "N/A")
-        anomalies = anomaly_map.get(r.scenario_id, [])
+        anomalies = anomaly_map.get(_result_key(r), [])
         statuses.add("\u2713 OK" if not anomalies else "\u26a0 Anomaly")
         console_vals.add(_bool_display(r.console_window_detected))
         gui_window_vals.add(_bool_display(r.visible_window_detected))
@@ -676,6 +695,7 @@ def _collect_unique_values(
     return {
         "launcher": sorted(launchers),
         "platform": sorted(platforms),
+        "uv_version": sorted(uv_versions),
         "subsystem": sorted(subsystems),
         "status": sorted(statuses),
         "console": sorted(console_vals),
@@ -839,6 +859,12 @@ def _render_html_report(
         ("Status", "Whether the scenario matched expected behaviour or had anomalies"),
         ("Platform", "Operating system platform (e.g. win32, linux)"),
         (
+            "uv Version",
+            "The uv version string used when this scenario was run. "
+            "Multiple rows with the same scenario but different uv version "
+            "reflect runs against different uv builds.",
+        ),
+        (
             "Launcher",
             "The executable used to start the process (python, uv, uvx, venv wrapper, etc.)",
         ),
@@ -876,6 +902,7 @@ def _render_html_report(
     parts.append('<th><input type="text" placeholder="Filter\u2026"></th>')
     parts.append(f"<th>{_render_filter_select(unique_vals['status'])}</th>")
     parts.append(f"<th>{_render_filter_select(unique_vals['platform'])}</th>")
+    parts.append(f"<th>{_render_filter_select(unique_vals['uv_version'])}</th>")
     parts.append(f"<th>{_render_filter_select(unique_vals['launcher'])}</th>")
     parts.append('<th><input type="text" placeholder="Filter\u2026"></th>')
     parts.append('<th><input type="text" placeholder="Filter\u2026"></th>')
@@ -890,7 +917,7 @@ def _render_html_report(
     # Data rows
     parts.append("<tbody>")
     for i, r in enumerate(results):
-        anomalies = anomaly_map.get(r.scenario_id, [])
+        anomalies = anomaly_map.get(_result_key(r), [])
         row_class = "data-row anomaly-row" if anomalies else "data-row"
         detail_id = f"detail-{i}" if anomalies else ""
         detail_attr = f' data-detail-row="{detail_id}"' if anomalies else ""
@@ -902,6 +929,7 @@ def _render_html_report(
         parts.append(f"<td>{_esc(r.scenario_id)}</td>")
         parts.append(f"<td>{_status_badge(anomalies)}</td>")
         parts.append(f"<td>{_esc(r.platform)}</td>")
+        parts.append(f"<td>{_esc(r.uv_version)}</td>")
         parts.append(f'<td><span class="launcher-tag">{_esc(r.launcher)}</span></td>')
         parts.append(
             f'<td><span class="cmd-line" title="{_esc(cmd_line)}">{_esc(cmd_line)}</span></td>'

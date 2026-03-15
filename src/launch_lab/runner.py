@@ -572,6 +572,7 @@ def run_scenario(
         os_version=_os_version(),
         python_version=_python_version(),
         uv_version=uv_ver,
+        uv_version_hash=_uv_version_hash(),
         launcher=_parse_launcher(scenario.launcher),
         mode=scenario.mode,
         fixture=scenario.fixture,

@@ -198,3 +198,91 @@ def test_html_report_column_filters():
     assert "filter-row" in html
     assert "<select>" in html
     assert 'placeholder="Filter' in html
+
+
+def test_html_report_uv_version_column():
+    """The unified table should include a uv Version column."""
+    results = [_make_result(exit_code=0, uv_version="uv 0.5.0")]
+    html = _render(results)
+    assert "uv Version" in html
+    assert "uv 0.5.0" in html
+
+
+def test_html_report_uv_version_filter():
+    """The uv Version column should have a filter dropdown."""
+    results = [
+        _make_result(scenario_id="s1", exit_code=0, uv_version="uv 0.5.0"),
+        _make_result(scenario_id="s2", exit_code=0, uv_version="uv 0.6.0"),
+    ]
+    html = _render(results)
+    # Both versions should appear as filter options
+    assert "uv 0.5.0" in html
+    assert "uv 0.6.0" in html
+
+
+def test_html_report_multi_version_both_shown():
+    """Results from multiple uv versions should all appear in the same table."""
+    results = [
+        _make_result(scenario_id="python-script-py", exit_code=0, uv_version="uv 0.5.0",
+                     uv_version_hash="aaa1111111"),
+        _make_result(scenario_id="python-script-py", exit_code=0, uv_version="uv 0.6.0",
+                     uv_version_hash="bbb2222222"),
+    ]
+    html = _render(results)
+    # Both version rows should appear
+    assert "uv 0.5.0" in html
+    assert "uv 0.6.0" in html
+    # The scenario id should appear twice
+    assert html.count("python-script-py") >= 2
+
+
+def test_artifact_filename_with_hash():
+    """artifact_filename should include the version hash when present."""
+    from launch_lab.collect import artifact_filename
+
+    r = _make_result(uv_version_hash="abc1234567")
+    name = artifact_filename(r)
+    assert name == "test-scenario__abc1234567.json"
+
+
+def test_artifact_filename_without_hash():
+    """artifact_filename should fall back to legacy naming when no hash."""
+    from launch_lab.collect import artifact_filename
+
+    r = _make_result()
+    name = artifact_filename(r)
+    assert name == "test-scenario.json"
+
+
+def test_save_result_creates_versioned_file(tmp_path: Path):
+    """save_result should use versioned filename when uv_version_hash is set."""
+    from launch_lab.collect import save_result
+
+    r = _make_result(uv_version="uv 0.5.0", uv_version_hash="abc1234567")
+    dest = save_result(r, output_dir=tmp_path)
+    assert dest.name == "test-scenario__abc1234567.json"
+    assert dest.exists()
+
+
+def test_save_result_creates_legacy_file_without_hash(tmp_path: Path):
+    """save_result should use legacy naming when no uv_version_hash."""
+    from launch_lab.collect import save_result
+
+    r = _make_result()
+    dest = save_result(r, output_dir=tmp_path)
+    assert dest.name == "test-scenario.json"
+    assert dest.exists()
+
+
+def test_load_all_results_multi_version(tmp_path: Path):
+    """load_all_results should load all versioned files from a directory."""
+    from launch_lab.collect import load_all_results, save_result
+
+    r1 = _make_result(scenario_id="s1", uv_version="uv 0.5.0", uv_version_hash="aaa1111111")
+    r2 = _make_result(scenario_id="s1", uv_version="uv 0.6.0", uv_version_hash="bbb2222222")
+    save_result(r1, output_dir=tmp_path)
+    save_result(r2, output_dir=tmp_path)
+    results = load_all_results(tmp_path)
+    assert len(results) == 2
+    versions = {r.uv_version for r in results}
+    assert versions == {"uv 0.5.0", "uv 0.6.0"}

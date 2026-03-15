@@ -160,3 +160,33 @@ def test_render_report_omits_uv_when_none():
     lines = _render_report(results)
     text = "\n".join(lines)
     assert "**uv:**" not in text
+
+
+def test_render_report_uv_version_column_in_summary_table():
+    """The summary table should include a uv Version column."""
+    results = [_make_result(exit_code=0, uv_version="uv 0.5.0")]
+    lines = _render_report(results)
+    text = "\n".join(lines)
+    assert "uv Version" in text
+    assert "uv 0.5.0" in text
+
+
+def test_render_report_uv_version_column_in_per_launcher_table():
+    """Per-launcher sections should include a uv Version column."""
+    results = [_make_result(exit_code=0, uv_version="uv 0.5.0", launcher=LauncherKind.PYTHON)]
+    lines = _render_report(results)
+    text = "\n".join(lines)
+    # The per-launcher table header includes uv Version
+    assert "uv Version" in text
+
+
+def test_render_report_multi_version_shows_both():
+    """Results from different uv versions should both appear in the report."""
+    results = [
+        _make_result(scenario_id="s1", exit_code=0, uv_version="uv 0.5.0"),
+        _make_result(scenario_id="s1", exit_code=1, uv_version="uv 0.6.0"),
+    ]
+    lines = _render_report(results)
+    text = "\n".join(lines)
+    assert "uv 0.5.0" in text
+    assert "uv 0.6.0" in text

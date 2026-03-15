@@ -68,6 +68,7 @@ def test_result_optional_fields_default_to_none():
     r = _make_result()
     assert r.os_version is None
     assert r.uv_version is None
+    assert r.uv_version_hash is None
     assert r.pe_subsystem is None
     assert r.exit_code is None
     assert r.notes is None
@@ -77,3 +78,19 @@ def test_process_info_minimal():
     p = ProcessInfo(pid=42, name="conhost.exe")
     assert p.pid == 42
     assert p.exe is None
+
+
+def test_uv_version_hash_stored_in_result():
+    """uv_version_hash should be preserved in JSON round-trip."""
+    r = _make_result(uv_version="uv 0.5.0", uv_version_hash="abc1234567")
+    serialised = r.model_dump_json()
+    data = json.loads(serialised)
+    assert data["uv_version"] == "uv 0.5.0"
+    assert data["uv_version_hash"] == "abc1234567"
+
+
+def test_uv_version_hash_roundtrip():
+    """ScenarioResult deserialized from JSON should restore uv_version_hash."""
+    r = _make_result(uv_version="uv 0.6.0", uv_version_hash="def9876543")
+    restored = ScenarioResult.model_validate_json(r.model_dump_json())
+    assert restored.uv_version_hash == "def9876543"

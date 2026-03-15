@@ -109,9 +109,11 @@ class TestRunScenario:
 
     def test_save_artifact(self, tmp_path):
         """Running with save_artifact should produce a JSON file."""
+        from launch_lab.collect import artifact_filename
+
         s = _make_scenario()
         result = run_scenario(s, timeout=15, save_artifact=True, artifact_dir=tmp_path)
-        artifact = tmp_path / f"{result.scenario_id}.json"
+        artifact = tmp_path / artifact_filename(result)
         assert artifact.exists()
         data = json.loads(artifact.read_text())
         assert data["scenario_id"] == "test-runner"
