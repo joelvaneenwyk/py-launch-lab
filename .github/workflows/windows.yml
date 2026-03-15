@@ -12,16 +12,31 @@ on:
         required: false
         default: ""
         type: string
+      custom-uv-source:
+        description: "Custom uv source (git URL or path). Leave empty to use default fork."
+        required: false
+        default: "https://github.com/joelvaneenwyk/uv"
+        type: string
+      skip-custom-uv:
+        description: "Set to 'true' to skip the custom uv build and comparison run."
+        required: false
+        default: "false"
+        type: string
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Unit tests (fast — no scenario matrix)
+  # ---------------------------------------------------------------------------
   python-tests:
     name: Python tests (Windows)
     runs-on: windows-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           version: ${{ github.event.inputs.uv-version || 'latest' }}
@@ -49,11 +64,270 @@ jobs:
         run: uv run pytest tests/integration -v
         continue-on-error: true
 
-      - name: Run full scenario matrix
+  # ---------------------------------------------------------------------------
+  # Scenario matrix — official uv release
+  # Runs in parallel with matrix-custom-uv.
+  # ---------------------------------------------------------------------------
+  matrix-official-uv:
+    name: Scenario matrix (official uv)
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          version: ${{ github.event.inputs.uv-version || 'latest' }}
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Run scenario matrix (official uv)
         run: uv run py-launch-lab matrix run
         continue-on-error: true
 
-      - name: Generate report
+      - name: Upload scenario results (official uv)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: matrix-results-official
+          path: artifacts/json/
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # Scenario matrix — custom uv fork (joelvaneenwyk/uv)
+  # Builds from source with cargo, caching both the cargo registry and the
+  # final compiled binary (keyed by the remote HEAD SHA) so that subsequent
+  # CI runs skip the 30-minute build when the source hasn't changed.
+  # Runs in parallel with matrix-official-uv.
+  # ---------------------------------------------------------------------------
+  matrix-custom-uv:
+    name: Scenario matrix (custom uv)
+    runs-on: windows-latest
+    if: ${{ github.event.inputs.skip-custom-uv != 'true' }}
+    permissions:
+      contents: read
+    env:
+      CUSTOM_UV_SOURCE: ${{ github.event.inputs.custom-uv-source || 'https://github.com/joelvaneenwyk/uv' }}
+      # Directory used to cache just the compiled uv binary across runs.
+      # Must be outside the workspace so the cache action can restore it
+      # before the checkout/build steps touch the workspace.
+      CUSTOM_UV_BIN_DIR: C:\custom-uv-bin
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv (official, for running py-launch-lab)
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          version: ${{ github.event.inputs.uv-version || 'latest' }}
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      # -- Compute stable URL hash (sha256[:12]) for cache key fallback -------
+      # This hash matches uv_provider._resolve_git_source() which uses
+      # hashlib.sha256(url.encode()).hexdigest()[:12] to name its clone dir.
+      # Python is always available on the runner, so this is fully reliable.
+      - name: Compute custom uv URL hash (stable cache key)
+        id: custom-uv-url-hash
+        shell: bash
+        env:
+          _CUSTOM_UV_SOURCE_FOR_HASH: ${{ env.CUSTOM_UV_SOURCE }}
+        run: |
+          URL_HASH=$(python3 -c "import os, hashlib; print(hashlib.sha256(os.environ['_CUSTOM_UV_SOURCE_FOR_HASH'].encode()).hexdigest()[:12])")
+          echo "url_hash=$URL_HASH" >> "$GITHUB_OUTPUT"
+          echo "URL hash: $URL_HASH"
+
+      # -- Determine precise cache key from remote HEAD SHA ------------------
+      - name: Get custom uv remote HEAD SHA (for cache key)
+        id: custom-uv-sha
+        shell: bash
+        run: |
+          SHA=$(git ls-remote "$CUSTOM_UV_SOURCE" HEAD 2>/dev/null | cut -f1 | head -c 12 || true)
+          if [ -z "$SHA" ]; then
+            # Fall back to the stable URL hash so the cache is always reusable
+            # even when git ls-remote is unavailable (e.g. rate limits).
+            SHA="${{ steps.custom-uv-url-hash.outputs.url_hash }}"
+            echo "git ls-remote unavailable; using URL hash as fallback: $SHA"
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Remote HEAD SHA: $SHA"
+        continue-on-error: true
+
+      # -- Try to restore the pre-built binary from cache --------------------
+      - name: Restore custom uv binary cache
+        id: custom-uv-bin-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CUSTOM_UV_BIN_DIR }}
+          key: custom-uv-bin-${{ runner.os }}-${{ steps.custom-uv-sha.outputs.sha || steps.custom-uv-url-hash.outputs.url_hash }}
+          restore-keys: |
+            custom-uv-bin-${{ runner.os }}-${{ steps.custom-uv-url-hash.outputs.url_hash }}
+            custom-uv-bin-${{ runner.os }}-
+        continue-on-error: true
+
+      # Check whether a usable binary actually exists after the cache restore.
+      # A cache hit can produce an empty directory (e.g. if a previous build
+      # failed after the cache key was saved).  Build steps are gated on the
+      # binary's presence, not just the cache-hit flag.
+      - name: Check if cached custom uv binary is usable
+        id: binary-check
+        shell: pwsh
+        run: |
+          if (Test-Path "$env:CUSTOM_UV_BIN_DIR\uv.exe") {
+            Write-Host "Cached binary found: $env:CUSTOM_UV_BIN_DIR\uv.exe"
+            "available=true" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Host "No cached binary at $env:CUSTOM_UV_BIN_DIR\uv.exe; will build from source."
+            "available=false" >> $env:GITHUB_OUTPUT
+          }
+
+      # -- On binary missing: set up Rust + cargo registry and build ----------
+      - name: Set up Rust toolchain (binary missing)
+        if: steps.binary-check.outputs.available != 'true'
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+        continue-on-error: true
+
+      - name: Restore cargo registry cache (binary missing)
+        if: steps.binary-check.outputs.available != 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          # Cargo registry contents are determined by Cargo.lock, not by the
+          # custom uv source revision.  Use a stable key so the registry is
+          # shared across all custom uv build runs.
+          key: cargo-registry-${{ runner.os }}-v1
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-
+        continue-on-error: true
+
+      - name: Build custom uv from source (binary missing)
+        id: build-custom-uv
+        if: steps.binary-check.outputs.available != 'true'
+        run: uv run py-launch-lab setup-uv "$env:CUSTOM_UV_SOURCE"
+        continue-on-error: true
+
+      # Copy the freshly-built binaries into the cache dir so the cache action
+      # saves them at job end and future runs get an immediate cache hit.
+      - name: Copy custom uv binaries to binary cache dir (after build)
+        if: >-
+          steps.binary-check.outputs.available != 'true' &&
+          steps.build-custom-uv.outcome == 'success'
+        shell: pwsh
+        run: |
+          # Use the pre-computed URL hash (same algorithm as uv_provider).
+          $urlHash = "${{ steps.custom-uv-url-hash.outputs.url_hash }}"
+          $srcDir = ".cache\custom_uv\$urlHash\target\release"
+          New-Item -ItemType Directory -Path $env:CUSTOM_UV_BIN_DIR -Force | Out-Null
+          $copied = $false
+          foreach ($bin in @("uv.exe", "uvw.exe")) {
+            $src = "$srcDir\$bin"
+            if (Test-Path $src) {
+              Copy-Item $src "$env:CUSTOM_UV_BIN_DIR\$bin" -Force
+              Write-Host "Copied $bin to $env:CUSTOM_UV_BIN_DIR"
+              $copied = $true
+            }
+          }
+          if (-not $copied) {
+            Write-Warning "No binaries found in $srcDir; binary cache will not be populated."
+            # Exit 1 so the step is visibly marked as failed in the job
+            # summary.  continue-on-error below lets the matrix run step
+            # and the artifact upload proceed regardless.
+            exit 1
+          }
+        continue-on-error: true
+
+      # -- Run the scenario matrix using the (cached or just-built) binary ---
+      - name: Run scenario matrix (custom uv)
+        id: run-custom-matrix
+        shell: pwsh
+        run: |
+          if (Test-Path "$env:CUSTOM_UV_BIN_DIR\uv.exe") {
+            Write-Host "Custom uv binary found at $env:CUSTOM_UV_BIN_DIR; running matrix."
+            uv run py-launch-lab matrix run --custom-uv $env:CUSTOM_UV_BIN_DIR
+          } else {
+            Write-Warning "Custom uv binary not found at $env:CUSTOM_UV_BIN_DIR; no custom matrix results will be produced."
+            # Exit with a distinct non-zero code (2) so the step shows as
+            # failed (not just skipped) in the job summary, making it visible
+            # that the matrix was not actually run.  continue-on-error below
+            # prevents this from blocking the artifact upload.
+            exit 2
+          }
+        continue-on-error: true
+
+      - name: Upload scenario results (custom uv)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: matrix-results-custom
+          path: artifacts/json/
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # Combined report generation.
+  # Waits for both parallel matrix jobs, downloads their JSON artifacts,
+  # merges them into artifacts/json/, and builds the combined report.
+  # Runs on every branch / PR so report artifacts are always available.
+  # GitHub Pages deployment is handled by the separate deploy-pages job
+  # (main branch only) to avoid environment protection rule failures on PRs.
+  # ---------------------------------------------------------------------------
+  generate-report:
+    name: Generate report
+    needs: [matrix-official-uv, matrix-custom-uv]
+    # Run even when matrix-custom-uv is skipped (skip-custom-uv=true).
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      models: read
+    steps:
+      - uses: actions/checkout@v4
+
+      # Download JSON results from both matrix jobs into the same directory.
+      # The versioned filenames (scenario__<hash>.json) ensure no collisions.
+      - name: Download official uv results
+        uses: actions/download-artifact@v4
+        with:
+          name: matrix-results-official
+          path: artifacts/json/
+        continue-on-error: true
+
+      - name: Download custom uv results
+        uses: actions/download-artifact@v4
+        with:
+          name: matrix-results-custom
+          path: artifacts/json/
+        continue-on-error: true
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          version: ${{ github.event.inputs.uv-version || 'latest' }}
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Generate combined report
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: uv run py-launch-lab report build --findings docs/findings
         continue-on-error: true
 
@@ -100,9 +374,66 @@ jobs:
           path: docs/findings/
           if-no-files-found: ignore
 
+      # Build the MkDocs site and the combined site artifact for Pages.
+      # The site artifact is uploaded regardless of branch so that PRs can
+      # inspect what would be deployed; the actual Pages deployment only runs
+      # in the deploy-pages job (main branch only).
+      - name: Install docs dependencies
+        run: uv sync --extra docs
+        continue-on-error: true
+
+      - name: Build docs with mkdocs
+        run: uv run mkdocs build --strict
+        continue-on-error: true
+
+      - name: Copy HTML report to site root
+        run: |
+          if [ -f "docs/findings/report.html" ]; then
+            cp docs/findings/report.html site/report.html
+            echo "HTML report copied to site/report.html"
+          else
+            echo "No HTML report found; skipping copy."
+          fi
+
+      - name: Upload Pages site artifact
+        if: always()
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+        continue-on-error: true
+
+  # ---------------------------------------------------------------------------
+  # GitHub Pages deployment — main branch only.
+  # Declared as a separate job so that the github-pages environment protection
+  # rules only apply here and never block PR runs of generate-report.
+  # ---------------------------------------------------------------------------
+  deploy-pages:
+    name: Deploy to GitHub Pages
+    needs: [generate-report]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: "pages"
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  # ---------------------------------------------------------------------------
+  # Rust shim build and tests (unchanged)
+  # ---------------------------------------------------------------------------
   rust-shim:
     name: Rust shim (Windows)
     runs-on: windows-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -132,14 +463,19 @@ jobs:
           echo "| Build | ${{ steps.build.outcome }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Tests | ${{ steps.test.outcome }} |" >> "$GITHUB_STEP_SUMMARY"
 
+  # ---------------------------------------------------------------------------
+  # Ubuntu unit tests — import and schema validation only
+  # ---------------------------------------------------------------------------
   python-tests-ubuntu:
-    name: Python tests (Ubuntu — import/schema only)
+    name: Python tests (Ubuntu -- import/schema only)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           version: ${{ github.event.inputs.uv-version || 'latest' }}

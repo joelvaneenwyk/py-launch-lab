@@ -123,16 +123,16 @@ def _render_summary_table(results: list[ScenarioResult]) -> list[str]:
     lines = [
         "## All Scenarios",
         "",
-        "| Scenario | Platform | Launcher | Exit Code | PE Subsystem"
+        "| Scenario | Platform | uv Version | Launcher | Exit Code | PE Subsystem"
         " | Console Allocated | GUI Window Spawned |",
-        "| --- | --- | --- | --- | --- | --- | --- |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for r in results:
         exit_display = "✅ 0" if r.exit_code == 0 else f"❌ {r.exit_code}"
         if r.exit_code is None:
             exit_display = "—"
         lines.append(
-            f"| {r.scenario_id} | {r.platform} | {r.launcher} "
+            f"| {r.scenario_id} | {r.platform} | {_na(r.uv_version)} | {r.launcher} "
             f"| {exit_display} | {_na(r.pe_subsystem)} "
             f"| {_na(r.console_window_detected)} | {_na(r.visible_window_detected)} |"
         )
@@ -151,12 +151,12 @@ def _render_per_launcher_sections(results: list[ScenarioResult]) -> list[str]:
         group = grouped[launcher]
         lines.append(f"### Launcher: `{launcher}`")
         lines.append("")
-        lines.append("| Scenario | Exit | Subsystem | stdout | stderr |")
-        lines.append("| --- | --- | --- | --- | --- |")
+        lines.append("| Scenario | uv Version | Exit | Subsystem | stdout | stderr |")
+        lines.append("| --- | --- | --- | --- | --- | --- |")
         for r in group:
             exit_display = str(r.exit_code) if r.exit_code is not None else "—"
             lines.append(
-                f"| {r.scenario_id} | {exit_display} "
+                f"| {r.scenario_id} | {_na(r.uv_version)} | {exit_display} "
                 f"| {_na(r.pe_subsystem)} | {_na(r.stdout_available)} "
                 f"| {_na(r.stderr_available)} |"
             )

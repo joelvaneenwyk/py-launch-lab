@@ -42,7 +42,7 @@ nav:
   - Implementation Guide: implementation.md
   - Detection Deep Dive: detection-deep-dive.md
   - Findings:
-      - CI Results: findings/report.md
+      - Interactive Report: findings/report.md
       - Anomalies & Root Causes: findings/anomalies.md
   - Development History: development-history.md
   - Project Plan: plan.md

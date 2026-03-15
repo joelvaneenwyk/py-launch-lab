@@ -65,6 +65,14 @@ class ScenarioResult(BaseModel):
     )
     python_version: str = Field(..., description="Python version string (e.g. '3.12.3').")
     uv_version: str | None = Field(None, description="uv version string if available.")
+    uv_version_hash: str | None = Field(
+        None,
+        description=(
+            "Short SHA-256 hash of the uv version string, used as a unique file-name "
+            "component so that results from different uv builds (including custom "
+            "branches) coexist in the same artifacts directory."
+        ),
+    )
 
     # What was launched
     launcher: LauncherKind = Field(..., description="Top-level launcher kind.")

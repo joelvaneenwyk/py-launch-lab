@@ -1,5 +1,19 @@
 # CI Findings
 
+The full **interactive HTML report** (with filters, sorting, and anomaly explanations)
+is available at:
+
+[**:material-chart-bar: Interactive Report (report.html)**](../report.html){ .md-button .md-button--primary }
+
+!!! tip "Multi-version comparison"
+    The interactive report shows results from both the **official uv release** and the
+    **custom `joelvaneenwyk/uv` build**. Use the **uv Version** column filter to compare
+    results side by side and identify which anomalies the custom build addresses.
+
+---
+
+<!-- The following section is replaced automatically by Windows CI. -->
+
 !!! info "No results yet"
 
     This page is automatically populated with results from the Windows CI
