@@ -426,6 +426,50 @@ jobs:
             echo "Homepage redirect to report/ created."
           fi
 
+      - name: Take site screenshots
+        run: |
+          pip install playwright
+          python -m playwright install chromium --with-deps
+          mkdir -p screenshots
+          python3 << 'SCRIPT'
+          from playwright.sync_api import sync_playwright
+          import http.server, threading, os
+
+          if not os.path.isdir("site"):
+              print("No site directory found; skipping screenshots.")
+              exit(0)
+
+          os.chdir("site")
+          handler = http.server.SimpleHTTPRequestHandler
+          httpd = http.server.HTTPServer(("127.0.0.1", 8080), handler)
+          thread = threading.Thread(target=httpd.serve_forever)
+          thread.daemon = True
+          thread.start()
+
+          with sync_playwright() as p:
+              browser = p.chromium.launch()
+              page = browser.new_page(viewport={"width": 1400, "height": 900})
+              page.goto("http://127.0.0.1:8080/")
+              page.wait_for_load_state("networkidle")
+              page.screenshot(path="../screenshots/homepage.png")
+              page.goto("http://127.0.0.1:8080/report/")
+              page.wait_for_load_state("networkidle")
+              page.screenshot(path="../screenshots/report.png", full_page=True)
+              browser.close()
+
+          httpd.shutdown()
+          print("Screenshots saved.")
+          SCRIPT
+        continue-on-error: true
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: site-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+
       - name: Upload Pages site artifact
         if: always()
         uses: actions/upload-pages-artifact@v3
