@@ -9,10 +9,21 @@ vars:
 
 tasks:
   default:
-    desc: Show available tasks
+    desc: Run matrix, build reports, and start local server
     cmds:
-      - task: matrix-run
-      - task: report
+      - task: serve
+
+  serve:
+    desc: Run matrix, build reports, and serve HTML report locally
+    deps:
+      - setup-custom-uv
+    cmds:
+      - uv run py-launch-lab serve {{if .CUSTOM_UV}}--custom-uv {{.CUSTOM_UV}}{{end}} {{if .FORCE}}--force{{end}} {{if .PORT}}--port {{.PORT}}{{end}} {{if .NO_BROWSER}}--no-browser{{end}} {{if .SKIP_MATRIX}}--skip-matrix{{end}}
+    vars:
+      FORCE: '{{.FORCE | default ""}}'
+      PORT: '{{.PORT | default ""}}'
+      NO_BROWSER: '{{.NO_BROWSER | default ""}}'
+      SKIP_MATRIX: '{{.SKIP_MATRIX | default ""}}'
 
   setup-custom-uv:
     aliases: [setup]

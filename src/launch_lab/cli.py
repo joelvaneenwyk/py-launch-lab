@@ -9,6 +9,7 @@ Commands:
     py-launch-lab matrix list
     py-launch-lab report build [--force]
     py-launch-lab inspect exe <path>
+    py-launch-lab serve                   — run matrix, build report, start local server
 """
 
 from __future__ import annotations
@@ -433,3 +434,144 @@ def probe_cmd(
     from launch_lab.probe import probe_executable
 
     probe_executable(executable, console, extra_args=extra_args)
+
+
+@app.command("serve")
+def serve_cmd(
+    json_dir: str = typer.Option("artifacts/json", "--json-dir", "-j", help="JSON artifacts dir."),
+    output: str = typer.Option("artifacts", "--output", "-o", help="Output directory root."),
+    port: int = typer.Option(8642, "--port", "-p", help="Port for the local HTTP server."),
+    host: str = typer.Option("127.0.0.1", "--host", help="Host to bind the server to."),
+    force: bool = typer.Option(
+        False, "--force", help="Force re-run of matrix and report even if artifacts exist."
+    ),
+    skip_matrix: bool = typer.Option(
+        False, "--skip-matrix", help="Skip the matrix run (use existing JSON artifacts)."
+    ),
+    no_browser: bool = typer.Option(
+        False, "--no-browser", help="Don't automatically open a browser."
+    ),
+    custom_uv: str | None = typer.Option(
+        None,
+        "--custom-uv",
+        help=(
+            "Custom uv source: a path to a uv binary, a Rust source directory, "
+            "or a git URL (e.g. https://github.com/joelvaneenwyk/uv). "
+            "When set, all uv/uvx/uvw invocations use this build."
+        ),
+    ),
+) -> None:
+    """Run the full matrix, build reports, and start a local server to view them.
+
+    This is the all-in-one command that:
+      1. Runs the full scenario matrix (unless --skip-matrix).
+      2. Builds both Markdown and HTML reports.
+      3. Starts a local HTTP server serving the artifacts directory.
+      4. Opens the HTML report in your default browser.
+
+    Press Ctrl+C to stop the server.
+
+    Examples:
+
+        py-launch-lab serve
+
+        py-launch-lab serve --port 9000 --no-browser
+
+        py-launch-lab serve --skip-matrix --force
+    """
+    import http.server
+    import os
+    import socketserver
+    import threading
+    import time
+    import webbrowser
+
+    from launch_lab.collect import load_all_results
+    from launch_lab.html_report import build_html_report
+    from launch_lab.report import build_report
+
+    _setup_logging(verbose=True)
+
+    if custom_uv:
+        _init_custom_uv(custom_uv)
+
+    json_path = Path(json_dir)
+    output_path = Path(output)
+    html_output = output_path / "html"
+    md_output = output_path / "markdown"
+
+    # --- Step 1: Run the matrix ---
+    if not skip_matrix:
+        results = load_all_results(json_path)
+        if force or not results:
+            console.print("[bold cyan]Step 1/3:[/bold cyan] Running scenario matrix …")
+            console.print("")
+            _run_matrix(output_dir=str(json_path), custom_uv=custom_uv)
+            console.print("")
+        else:
+            console.print(
+                f"[bold cyan]Step 1/3:[/bold cyan] Using existing artifacts "
+                f"({len(results)} results in {json_path})"
+            )
+            console.print("  [dim]Use --force to re-run the matrix.[/dim]")
+            console.print("")
+    else:
+        console.print("[bold cyan]Step 1/3:[/bold cyan] Skipped matrix run (--skip-matrix)")
+        console.print("")
+
+    # --- Step 2: Build reports ---
+    console.print("[bold cyan]Step 2/3:[/bold cyan] Building reports …")
+
+    md_dest = build_report(
+        json_dir=json_path,
+        output_dir=md_output,
+        findings_dir=output_path / "findings" if (output_path / "findings").exists() else None,
+    )
+    if md_dest:
+        console.print(f"  [green]Markdown report → {md_dest}[/green]")
+
+    html_dest = build_html_report(json_dir=json_path, output_dir=html_output, force=force)
+    if html_dest:
+        console.print(f"  [green]HTML report → {html_dest}[/green]")
+    else:
+        console.print("  [yellow]No results to report — run the matrix first.[/yellow]")
+        raise typer.Exit(1)
+    console.print("")
+
+    # --- Step 3: Start server ---
+    serve_dir = output_path.resolve()
+    report_url = f"http://{host}:{port}/html/report.html"
+
+    console.print(f"[bold cyan]Step 3/3:[/bold cyan] Starting HTTP server on {host}:{port}")
+    console.print(f"  Serving: [cyan]{serve_dir}[/cyan]")
+    console.print(f"  Report:  [bold green]{report_url}[/bold green]")
+    console.print("")
+    console.print("  Press [bold]Ctrl+C[/bold] to stop the server.")
+    console.print("")
+
+    # Open browser after a short delay to let server start
+    if not no_browser:
+
+        def _open_browser() -> None:
+            time.sleep(0.5)
+            webbrowser.open(report_url)
+
+        threading.Thread(target=_open_browser, daemon=True).start()
+
+    try:
+        os.chdir(serve_dir)
+
+        class _QuietHandler(http.server.SimpleHTTPRequestHandler):
+            """Suppress request logging to keep the terminal clean."""
+
+            def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+                pass
+
+        with socketserver.TCPServer((host, port), _QuietHandler) as httpd:
+            httpd.serve_forever()
+    except KeyboardInterrupt:
+        console.print("\n[dim]Server stopped.[/dim]")
+    except OSError as exc:
+        console.print(f"\n[red]Server error:[/red] {exc}")
+        console.print(f"[dim]Is port {port} already in use? Try --port <number>[/dim]")
+        raise typer.Exit(1) from exc
