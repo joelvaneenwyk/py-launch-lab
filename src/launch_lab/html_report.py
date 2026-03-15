@@ -608,7 +608,7 @@ tr.anomaly-detail-row td {
     font-weight: 600;
     cursor: default;
 }
-.uv-versions-table th:hover { background: #2d333b; }
+.uv-versions-table th:hover { background: #3a3f47; }
 .uv-versions-table td {
     padding: 0.5rem 1rem;
     border-bottom: 1px solid var(--border);
@@ -858,6 +858,22 @@ def _render_uv_versions_table(results: list[ScenarioResult]) -> str:
     for ver, _hash in sorted_versions:
         seen_version_strings[ver] = seen_version_strings.get(ver, 0) + 1
 
+    def _infer_source(
+        ver: str,
+        ver_hash: str | None,
+        occurrence: int,
+        idx: int,
+        has_multiple: bool,
+    ) -> str:
+        """Infer whether a build is the official release or a custom fork."""
+        _OFFICIAL = "Official release (astral-sh/uv)"
+        _CUSTOM = "Custom build (joelvaneenwyk/uv fork)"
+        if not has_multiple or ver_hash is None:
+            return _OFFICIAL
+        if seen_version_strings.get(ver, 1) > 1:
+            return _OFFICIAL if occurrence == 1 else _CUSTOM
+        return _OFFICIAL if idx == 0 else _CUSTOM
+
     parts: list[str] = []
     parts.append('<table class="uv-versions-table">')
     parts.append("<thead><tr>")
@@ -872,30 +888,15 @@ def _render_uv_versions_table(results: list[ScenarioResult]) -> str:
     version_occurrence: dict[str, int] = {}
     has_multiple_builds = len(sorted_versions) > 1
 
-    for ver, ver_hash in sorted_versions:
+    for idx, (ver, ver_hash) in enumerate(sorted_versions):
         count = version_info[(ver, ver_hash)]
         version_occurrence[ver] = version_occurrence.get(ver, 0) + 1
 
-        # Infer source label
-        if not has_multiple_builds:
-            source = "Official release (astral-sh/uv)"
-        elif ver_hash is None:
-            source = "Official release (astral-sh/uv)"
-        elif seen_version_strings.get(ver, 1) > 1:
-            # Same version string with multiple hashes -- first is official
-            if version_occurrence[ver] == 1:
-                source = "Official release (astral-sh/uv)"
-            else:
-                source = "Custom build (joelvaneenwyk/uv fork)"
-        else:
-            # Different version strings -- use ordering heuristic
-            idx = sorted_versions.index((ver, ver_hash))
-            if idx == 0:
-                source = "Official release (astral-sh/uv)"
-            else:
-                source = "Custom build (joelvaneenwyk/uv fork)"
+        source = _infer_source(
+            ver, ver_hash, version_occurrence[ver], idx, has_multiple_builds,
+        )
 
-        hash_display = _esc(ver_hash[:12]) if ver_hash else "N/A"
+        hash_display = _esc(ver_hash[:12]) if ver_hash and ver_hash.strip() else "N/A"
 
         parts.append("<tr>")
         parts.append(f"<td><code>{_esc(ver)}</code></td>")
