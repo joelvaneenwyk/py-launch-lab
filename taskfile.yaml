@@ -11,6 +11,10 @@ tasks:
   default:
     desc: Run matrix, build reports, and start local server
     cmds:
+      - git add .
+      - git pull --rebase --autostash
+      - cmd: |
+          uv venv --clear || true
       - task: serve
 
   serve:
