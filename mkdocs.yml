@@ -41,8 +41,9 @@ nav:
   - Windows Semantics: windows-launch-semantics.md
   - Implementation Guide: implementation.md
   - Detection Deep Dive: detection-deep-dive.md
+  - Interactive Report: report.md
   - Findings:
-      - Interactive Report: findings/report.md
+      - CI Findings: findings/report.md
       - Anomalies & Root Causes: findings/anomalies.md
   - Development History: development-history.md
   - Project Plan: plan.md

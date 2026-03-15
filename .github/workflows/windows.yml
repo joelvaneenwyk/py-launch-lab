@@ -386,11 +386,12 @@ jobs:
         run: uv run mkdocs build --strict
         continue-on-error: true
 
-      - name: Copy HTML report to site root
+      - name: Copy HTML report to site
         run: |
           if [ -f "docs/findings/report.html" ]; then
-            cp docs/findings/report.html site/report.html
-            echo "HTML report copied to site/report.html"
+            mkdir -p site/report
+            cp docs/findings/report.html site/report/index.html
+            echo "HTML report copied to site/report/index.html"
           else
             echo "No HTML report found; skipping copy."
           fi

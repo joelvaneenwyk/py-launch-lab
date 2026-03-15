@@ -9,7 +9,7 @@ the **official uv release** and the **custom `joelvaneenwyk/uv` build** side by 
 Use the column filters to compare behaviour across uv versions and identify which
 anomalies have been fixed in the custom build.
 
-[**:material-chart-bar: Open Full Interactive Report &rarr;**](report.html){ .md-button .md-button--primary }
+[**:material-chart-bar: Open Full Interactive Report &rarr;**](report.md){ .md-button .md-button--primary }
 [**:material-file-find: View CI Findings (Markdown)**](findings/report.md){ .md-button }
 
 !!! tip "Filtering by uv version"

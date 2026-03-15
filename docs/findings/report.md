@@ -3,7 +3,7 @@
 The full **interactive HTML report** (with filters, sorting, and anomaly explanations)
 is available at:
 
-[**:material-chart-bar: Interactive Report (report.html)**](../report.html){ .md-button .md-button--primary }
+[**:material-chart-bar: Interactive Report**](../report.md){ .md-button .md-button--primary }
 
 !!! tip "Multi-version comparison"
     The interactive report shows results from both the **official uv release** and the
