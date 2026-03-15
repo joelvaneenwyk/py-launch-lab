@@ -278,28 +278,22 @@ jobs:
           if-no-files-found: ignore
 
   # ---------------------------------------------------------------------------
-  # Combined report generation and GitHub Pages deployment.
+  # Combined report generation.
   # Waits for both parallel matrix jobs, downloads their JSON artifacts,
-  # merges them into artifacts/json/, builds the combined report, and deploys
-  # the HTML report + MkDocs site to GitHub Pages.
+  # merges them into artifacts/json/, and builds the combined report.
+  # Runs on every branch / PR so report artifacts are always available.
+  # GitHub Pages deployment is handled by the separate deploy-pages job
+  # (main branch only) to avoid environment protection rule failures on PRs.
   # ---------------------------------------------------------------------------
   generate-report:
-    name: Generate report and deploy pages
+    name: Generate report
     needs: [matrix-official-uv, matrix-custom-uv]
     # Run even when matrix-custom-uv is skipped (skip-custom-uv=true).
     if: always()
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pages: write
-      id-token: write
       models: read
-    concurrency:
-      group: "pages"
-      cancel-in-progress: false
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -380,7 +374,10 @@ jobs:
           path: docs/findings/
           if-no-files-found: ignore
 
-      # -- GitHub Pages deployment -------------------------------------------
+      # Build the MkDocs site and the combined site artifact for Pages.
+      # The site artifact is uploaded regardless of branch so that PRs can
+      # inspect what would be deployed; the actual Pages deployment only runs
+      # in the deploy-pages job (main branch only).
       - name: Install docs dependencies
         run: uv sync --extra docs
         continue-on-error: true
@@ -398,23 +395,36 @@ jobs:
             echo "No HTML report found; skipping copy."
           fi
 
-      - name: Setup Pages
-        if: github.ref == 'refs/heads/main'
-        uses: actions/configure-pages@v5
-        continue-on-error: true
-
-      - name: Upload Pages artifact
-        if: github.ref == 'refs/heads/main'
+      - name: Upload Pages site artifact
+        if: always()
         uses: actions/upload-pages-artifact@v3
         with:
           path: site
         continue-on-error: true
 
+  # ---------------------------------------------------------------------------
+  # GitHub Pages deployment — main branch only.
+  # Declared as a separate job so that the github-pages environment protection
+  # rules only apply here and never block PR runs of generate-report.
+  # ---------------------------------------------------------------------------
+  deploy-pages:
+    name: Deploy to GitHub Pages
+    needs: [generate-report]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: "pages"
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Deploy to GitHub Pages
-        if: github.ref == 'refs/heads/main'
         id: deployment
         uses: actions/deploy-pages@v4
-        continue-on-error: true
 
   # ---------------------------------------------------------------------------
   # Rust shim build and tests (unchanged)
