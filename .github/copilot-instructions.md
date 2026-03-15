@@ -16,23 +16,30 @@ locally or wait for CI deployment.
 ### Generating screenshots locally
 
 ```bash
-# Generate the HTML report with sample data
-python -c "
-from launch_lab.html_report import build_html_report
-build_html_report(force=True)
-"
+# 1. Build the docs site
+uv sync --extra docs
+uv run mkdocs build --strict
 
-# Or use playwright to screenshot the built site
+# 2. Serve the site and take screenshots with playwright
 pip install playwright
 python -m playwright install chromium
 python3 -c "
 from playwright.sync_api import sync_playwright
+import http.server, threading, os
+
+os.chdir('site')
+httpd = http.server.HTTPServer(('127.0.0.1', 8080),
+                                http.server.SimpleHTTPRequestHandler)
+t = threading.Thread(target=httpd.serve_forever, daemon=True)
+t.start()
+
 with sync_playwright() as p:
     browser = p.chromium.launch()
     page = browser.new_page(viewport={'width': 1400, 'height': 900})
-    page.goto('file:///path/to/artifacts/html/report.html')
-    page.screenshot(path='screenshot.png', full_page=True)
+    page.goto('http://127.0.0.1:8080/')
+    page.screenshot(path='../screenshot.png', full_page=True)
     browser.close()
+httpd.shutdown()
 "
 ```
 

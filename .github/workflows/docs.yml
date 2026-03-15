@@ -67,6 +67,10 @@ jobs:
           from playwright.sync_api import sync_playwright
           import http.server, threading, os
 
+          if not os.path.isdir("site"):
+              print("No site directory found; skipping screenshots.")
+              exit(0)
+
           os.chdir("site")
           handler = http.server.SimpleHTTPRequestHandler
           httpd = http.server.HTTPServer(("127.0.0.1", 8080), handler)
@@ -98,6 +102,9 @@ jobs:
           path: screenshots/
           if-no-files-found: ignore
 
+      # upload-pages-artifact may fail on PRs (no pages:write permission).
+      # This is expected — the artifact is only consumed by the deploy job
+      # which only runs on main.
       - name: Upload Pages site artifact
         uses: actions/upload-pages-artifact@v3
         with:
