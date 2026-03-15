@@ -2,7 +2,17 @@
 Integration tests: venv python/pythonw executables and entrypoint scripts.
 
 These tests create virtual environments using ``uv venv``, install fixture
-packages into them, and verify the observable behaviour of:
+packages into them, and verify observable behaviour against the *ideal*
+expectations defined in ``launch_lab.expectations.EXPECTATIONS`` (the single
+source of truth for expected Windows launch semantics).
+
+Where current tooling (e.g. ``uv venv``) produces behaviour that deviates from
+the ideal expectation, ``KNOWN_DEVIATIONS`` is consulted and the test uses
+``pytest.xfail`` rather than asserting the buggy value.  When the upstream fix
+lands, the xfail turns into xpass — automatic signal that the deviation is
+resolved.
+
+Covered areas:
 
 1. **venv python / pythonw executables**
    - On Windows the venv ``python.exe`` is a CUI (console-subsystem) copy or
@@ -37,6 +47,7 @@ See also
 --------
 - ``docs/scenario-matrix.md`` — human-readable scenario table
 - ``src/launch_lab/matrix.py`` — formal scenario definitions
+- ``src/launch_lab/expectations.py`` — ideal expectations (single source of truth)
 """
 
 from __future__ import annotations
@@ -48,6 +59,7 @@ from pathlib import Path
 
 import pytest
 
+from launch_lab.expectations import EXPECTATIONS, is_known_deviation
 from launch_lab.inspect_pe import inspect_pe
 from launch_lab.matrix import Scenario
 from launch_lab.models import LauncherKind
@@ -231,26 +243,33 @@ class TestVenvVsSystemPython:
 
     @pytest.mark.skipif(not _IS_WINDOWS, reason="PE comparison only meaningful on Windows")
     def test_venv_pythonw_pe_matches_system(self, venv_dir: Path) -> None:
-        """Document PE subsystems for venv and system pythonw.exe.
+        """The venv pythonw.exe should be GUI-subsystem, matching the system pythonw.
 
-        Note: ``uv venv`` creates pythonw.exe as a CUI trampoline that
-        internally launches the real GUI-subsystem interpreter.  This differs
-        from ``python -m venv`` which copies the actual pythonw.exe (GUI).
-        The test documents the observed subsystem without requiring GUI.
+        Expectations source: ``EXPECTATIONS["venv-pythonw-script-py"]``
         """
         venv_pythonw = venv_dir / _SCRIPTS_DIR / "pythonw.exe"
         sys_pythonw = Path(sys.executable).parent / "pythonw.exe"
 
         venv_pe = inspect_pe(venv_pythonw)
         print(f"\n  venv pythonw PE subsystem: {venv_pe}")
-        # uv venv creates CUI trampolines; stdlib venv copies the real GUI exe.
-        # Both CUI and GUI are acceptable for the uv-generated pythonw.
-        assert venv_pe in ("CUI", "GUI"), f"venv pythonw should be CUI or GUI, got {venv_pe}"
 
+        expected = EXPECTATIONS["venv-pythonw-script-py"]
+        ideal_pe = expected.pe_subsystem
+
+        # System pythonw should always be GUI
         if sys_pythonw.is_file():
             sys_pe = inspect_pe(sys_pythonw)
             print(f"  system pythonw PE subsystem: {sys_pe}")
             assert sys_pe == "GUI", f"system pythonw should be GUI, got {sys_pe}"
+
+        # Check venv pythonw against the ideal expectation
+        deviation = is_known_deviation("venv-pythonw-script-py", "pe_subsystem")
+        if venv_pe != ideal_pe and deviation is not None:
+            pytest.xfail(
+                f"Known deviation: venv pythonw is {venv_pe} instead of {ideal_pe}.  "
+                f"{deviation.reason}"
+            )
+        assert venv_pe == ideal_pe, f"Expected venv pythonw to be {ideal_pe}, got {venv_pe}."
 
     @pytest.mark.skipif(not _IS_WINDOWS, reason="Symlink/hardlink checks Windows-specific")
     def test_venv_python_is_copy_or_link(self, venv_python: Path) -> None:
@@ -400,25 +419,29 @@ class TestVenvPythonW:
 
     @pytest.mark.skipif(not _IS_WINDOWS, reason="pythonw only exists on Windows")
     def test_venv_pythonw_subsystem(self, venv_dir: Path) -> None:
-        """On Windows the venv pythonw.exe PE subsystem is documented.
+        """The venv pythonw.exe should be a GUI-subsystem binary.
 
-        **Finding:** ``uv venv`` creates ``pythonw.exe`` as a CUI trampoline
-        (not a true GUI PE binary).  This is a known divergence from
-        ``python -m venv``, which copies the real GUI-subsystem
-        ``pythonw.exe``.  The consequence is that ``uv``-venv ``pythonw.exe``
-        *does* allocate a console window on launch, whereas the stdlib venv
-        ``pythonw.exe`` does not.
+        Expectations source: ``EXPECTATIONS["venv-pythonw-script-py"]``
 
-        Both are accepted here so the test suite works with either venv tool.
+        The ideal behaviour is for the venv ``pythonw.exe`` to be a genuine
+        GUI PE binary — matching the system ``pythonw.exe``.  If it is CUI
+        instead (as ``uv venv`` currently produces), this is a known
+        deviation that is documented in ``KNOWN_DEVIATIONS``.
         """
         pythonw = venv_dir / _SCRIPTS_DIR / "pythonw.exe"
         subsystem = inspect_pe(pythonw)
         print(f"\n  venv pythonw PE subsystem: {subsystem}")
-        # uv venv produces CUI trampolines; stdlib venv produces GUI.
-        assert subsystem in ("CUI", "GUI"), (
-            f"Expected venv pythonw to be CUI or GUI, got {subsystem}. "
-            "uv venv creates CUI trampolines; stdlib venv copies the real GUI exe."
-        )
+
+        expected = EXPECTATIONS["venv-pythonw-script-py"]
+        ideal_pe = expected.pe_subsystem
+
+        deviation = is_known_deviation("venv-pythonw-script-py", "pe_subsystem")
+        if subsystem != ideal_pe and deviation is not None:
+            pytest.xfail(
+                f"Known deviation: venv pythonw is {subsystem} instead of {ideal_pe}.  "
+                f"{deviation.reason}"
+            )
+        assert subsystem == ideal_pe, f"Expected venv pythonw to be {ideal_pe}, got {subsystem}."
 
     @pytest.mark.skipif(not _IS_WINDOWS, reason="pythonw only exists on Windows")
     def test_venv_pythonw_runs_script(self, venv_dir: Path) -> None:
@@ -437,42 +460,36 @@ class TestVenvPythonW:
 
     @pytest.mark.skipif(not _IS_WINDOWS, reason="pythonw only exists on Windows")
     def test_venv_pythonw_console_window(self, venv_dir: Path) -> None:
-        """Document console-window behaviour of venv pythonw.exe.
+        """The venv pythonw.exe should NOT create a console window.
 
-        **Finding:** ``uv venv`` creates ``pythonw.exe`` as a CUI trampoline
-        (PE subsystem = CUI), not a true GUI-subsystem binary.  This means it
-        *does* allocate a console window — unlike the system ``pythonw.exe``
-        which is a genuine GUI executable.
+        Expectations source: ``EXPECTATIONS["venv-pythonw-script-py"]``
 
-        ``python -m venv`` copies the real GUI-subsystem ``pythonw.exe``, so
-        the behaviour differs depending on which tool created the venv.
-
-        This test asserts the *actual* observed behaviour with ``uv venv``
-        rather than the "ideal" behaviour, so the test suite documents reality.
+        pythonw.exe is a GUI-subsystem binary and should not allocate a
+        console.  If the venv tooling creates a CUI trampoline instead,
+        a console window will appear — this is a known deviation.
         """
         pythonw = venv_dir / _SCRIPTS_DIR / "pythonw.exe"
         script = _FIXTURES / "raw_py" / "hello.py"
-        subsystem = inspect_pe(pythonw)
         scenario = _make_venv_scenario(
             "venv-pythonw-console-check",
             str(pythonw),
             [str(script)],
-            description="venv pythonw hello.py — document console behaviour",
+            description="venv pythonw hello.py — verify no console window",
         )
         result = run_scenario(scenario, timeout=15)
 
-        if subsystem == "CUI":
-            # uv venv: pythonw.exe is a CUI trampoline → DOES create a console.
-            if result.console_window_detected is not None:
-                assert result.console_window_detected is True, (
-                    "uv-venv pythonw.exe is CUI and should create a console window"
+        expected = EXPECTATIONS["venv-pythonw-script-py"]
+        if result.console_window_detected is not None:
+            deviation = is_known_deviation("venv-pythonw-script-py", "console_window")
+            if result.console_window_detected != expected.console_window and deviation is not None:
+                pytest.xfail(
+                    f"Known deviation: console_window={result.console_window_detected}, "
+                    f"ideal={expected.console_window}.  {deviation.reason}"
                 )
-        else:
-            # stdlib venv: pythonw.exe is true GUI → should NOT create a console.
-            if result.console_window_detected is not None:
-                assert result.console_window_detected is False, (
-                    "stdlib-venv pythonw.exe is GUI and should NOT create a console window"
-                )
+            assert result.console_window_detected == expected.console_window, (
+                f"venv pythonw.exe console_window: expected {expected.console_window}, "
+                f"got {result.console_window_detected}"
+            )
 
     def test_venv_pythonw_absent_on_non_windows(self, venv_dir: Path) -> None:
         """On non-Windows there is no pythonw executable in the venv."""
@@ -622,25 +639,16 @@ class TestVenvGuiEntrypoint:
 
     @pytest.mark.skipif(not _IS_WINDOWS, reason="GUI entrypoint .exe only on Windows")
     def test_gui_entrypoint_no_console_window(self, venv_with_packages: Path) -> None:
-        """Document console-window behaviour of the GUI entrypoint wrapper.
+        """GUI entry-point wrappers should NOT create a console window.
 
-        **Finding:** In a uv venv the GUI wrapper internally launches
-        ``pythonw.exe``, which is a CUI trampoline (not true GUI).  The CUI
-        child causes Windows to allocate a console window — a terminal flash.
-        This is a known uv bug.
+        Expectations source: ``EXPECTATIONS["venv-gui-entrypoint"]``
 
-        See:
-        - https://github.com/astral-sh/uv/issues/9781
-        - https://github.com/joelvaneenwyk/uv/issues/1 (investigation)
-        - https://github.com/joelvaneenwyk/uv/pull/2 (fix in progress)
-
-        The test asserts the *actual* observed behaviour (console_window=True)
-        rather than the ideal (False) so the test suite documents reality.
-        Once the uv fix lands, this assertion should flip back to False.
+        The GUI wrapper is a GUI-subsystem PE, and its child pythonw.exe
+        should also be GUI-subsystem.  If the venv tooling creates a CUI
+        trampoline for pythonw.exe, a console window will flash — this is
+        a known deviation documented in ``KNOWN_DEVIATIONS``.
         """
         wrapper = venv_with_packages / _SCRIPTS_DIR / "lab-gui.exe"
-        pythonw = venv_with_packages / _SCRIPTS_DIR / "pythonw.exe"
-        pythonw_pe = inspect_pe(pythonw) if pythonw.exists() else None
         scenario = _make_venv_scenario(
             "venv-gui-ep-no-console",
             str(wrapper),
@@ -648,18 +656,19 @@ class TestVenvGuiEntrypoint:
             fixture="pkg_gui",
         )
         result = run_scenario(scenario, timeout=15)
+
+        expected = EXPECTATIONS["venv-gui-entrypoint"]
         if result.console_window_detected is not None:
-            if pythonw_pe == "CUI":
-                # uv venv: pythonw.exe is CUI trampoline → console WILL appear
-                assert result.console_window_detected is True, (
-                    "uv-venv GUI entrypoint: pythonw.exe is CUI trampoline, "
-                    "console window expected (uv bug — see uv#9781)"
+            deviation = is_known_deviation("venv-gui-entrypoint", "console_window")
+            if result.console_window_detected != expected.console_window and deviation is not None:
+                pytest.xfail(
+                    f"Known deviation: console_window={result.console_window_detected}, "
+                    f"ideal={expected.console_window}.  {deviation.reason}"
                 )
-            else:
-                # stdlib venv or fixed uv: pythonw.exe is true GUI → no console
-                assert result.console_window_detected is False, (
-                    "project.gui-scripts entrypoint (GUI) should NOT create a console window"
-                )
+            assert result.console_window_detected == expected.console_window, (
+                f"GUI entrypoint console_window: expected {expected.console_window}, "
+                f"got {result.console_window_detected}"
+            )
 
     @pytest.mark.skipif(not _IS_WINDOWS, reason="PE inspection only meaningful on Windows")
     def test_gui_entrypoint_file_info(self, venv_with_packages: Path) -> None:
@@ -794,19 +803,15 @@ class TestVenvDualEntrypoints:
 
     @pytest.mark.skipif(not _IS_WINDOWS, reason="Console detection only meaningful on Windows")
     def test_dual_gui_no_console_window(self, venv_with_packages: Path) -> None:
-        """Document console-window behaviour of the dual-package GUI entrypoint.
+        """The dual-package GUI entry-point should NOT create a console window.
 
-        **Finding:** Same CUI-trampoline issue as the single-package GUI
-        entrypoint — uv venv ``pythonw.exe`` is CUI, so a console flashes.
+        Expectations source: ``EXPECTATIONS["venv-dual-gui-entrypoint"]``
 
-        See:
-        - https://github.com/astral-sh/uv/issues/9781
-        - https://github.com/joelvaneenwyk/uv/issues/1 (investigation)
-        - https://github.com/joelvaneenwyk/uv/pull/2 (fix in progress)
+        If the venv tooling creates a CUI trampoline for pythonw.exe, a
+        console window will flash — this is a known deviation documented
+        in ``KNOWN_DEVIATIONS``.
         """
         wrapper = venv_with_packages / _SCRIPTS_DIR / "lab-dual-gui.exe"
-        pythonw = venv_with_packages / _SCRIPTS_DIR / "pythonw.exe"
-        pythonw_pe = inspect_pe(pythonw) if pythonw.exists() else None
         scenario = _make_venv_scenario(
             "venv-dual-gui-no-console",
             str(wrapper),
@@ -814,16 +819,19 @@ class TestVenvDualEntrypoints:
             fixture="pkg_dual",
         )
         result = run_scenario(scenario, timeout=15)
+
+        expected = EXPECTATIONS["venv-dual-gui-entrypoint"]
         if result.console_window_detected is not None:
-            if pythonw_pe == "CUI":
-                # uv venv: pythonw.exe is CUI trampoline → console WILL appear
-                assert result.console_window_detected is True, (
-                    "uv-venv dual GUI entrypoint: pythonw.exe is CUI trampoline, "
-                    "console window expected (uv bug — see uv#9781)"
+            deviation = is_known_deviation("venv-dual-gui-entrypoint", "console_window")
+            if result.console_window_detected != expected.console_window and deviation is not None:
+                pytest.xfail(
+                    f"Known deviation: console_window={result.console_window_detected}, "
+                    f"ideal={expected.console_window}.  {deviation.reason}"
                 )
-            else:
-                # stdlib venv or fixed uv: no console
-                assert result.console_window_detected is False
+            assert result.console_window_detected == expected.console_window, (
+                f"Dual GUI entrypoint console_window: expected {expected.console_window}, "
+                f"got {result.console_window_detected}"
+            )
 
     def test_dual_non_windows_both_run(self, venv_with_packages: Path) -> None:
         """On non-Windows, both entrypoints should exist and execute cleanly."""

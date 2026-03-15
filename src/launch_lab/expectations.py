@@ -1,20 +1,34 @@
 """
 Expected behaviour definitions for py-launch-lab scenarios.
 
-Each scenario has an expected set of observable properties.  The HTML report
-compares actual results against these expectations and highlights anomalies.
+**These expectations encode *ideal* Windows launch semantics** — what a
+correctly-behaving system *should* produce, even if current tooling (e.g. uv)
+has known bugs that cause different behaviour.
+
+When actual observed behaviour deviates from an expectation, the HTML report
+highlights the row with an anomaly bubble.  Known deviations due to upstream
+bugs are documented in :data:`KNOWN_DEVIATIONS` so that tests can mark them
+as ``xfail`` rather than asserting the buggy behaviour.
+
+**Single source of truth:** integration tests should derive their assertions
+from ``EXPECTATIONS`` and ``KNOWN_DEVIATIONS`` rather than hard-coding values.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from launch_lab.models import ScenarioResult, Subsystem
 
 
 @dataclass(frozen=True)
 class ExpectedBehaviour:
-    """What we expect a scenario to produce on a correctly-behaving system."""
+    """What we expect a scenario to produce on a correctly-behaving system.
+
+    These represent the *ideal* behaviour, not necessarily what current
+    tooling produces.  See :data:`KNOWN_DEVIATIONS` for cases where the
+    real world diverges.
+    """
 
     pe_subsystem: Subsystem | None = None
     console_window: bool | None = None
@@ -23,6 +37,25 @@ class ExpectedBehaviour:
     exit_code: int = 0
     explanation: str = ""
     doc_url: str = ""
+
+
+@dataclass(frozen=True)
+class KnownDeviation:
+    """A known deviation from ideal expectations caused by upstream tooling bugs.
+
+    When current tooling produces behaviour that differs from the ideal
+    expectation, a ``KnownDeviation`` documents the discrepancy so that:
+    - The HTML report can annotate it appropriately.
+    - Tests can ``pytest.xfail`` instead of asserting the buggy value.
+    - When the upstream fix lands, the xfail turns into an xpass, providing
+      automatic signal that the deviation is resolved.
+    """
+
+    field: str
+    ideal_value: str
+    actual_value: str
+    reason: str
+    issue_url: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -196,15 +229,12 @@ EXPECTATIONS: dict[str, ExpectedBehaviour] = {
         exit_code=0,
         explanation=(
             "GUI entry-point wrapper in a venv (pip/uv-generated .exe with GUI "
-            "subsystem).  The wrapper itself is GUI, so Windows does not auto-allocate "
-            "a console for it.  However, the wrapper internally launches the venv's "
-            "pythonw.exe — if that binary is a CUI copy (as in uv venvs), a console "
-            "window WILL flash because the child process triggers console allocation.  "
-            "This is a known uv bug where the venv pythonw.exe is not actually "
-            "GUI-subsystem.  Investigation: https://github.com/joelvaneenwyk/uv/issues/1  "
-            "Fix in progress: https://github.com/joelvaneenwyk/uv/pull/2"
+            "subsystem).  The wrapper itself is GUI, so Windows should NOT "
+            "auto-allocate a console for it.  The wrapper internally launches "
+            "the venv's pythonw.exe which should also be a GUI binary.  "
+            "See KNOWN_DEVIATIONS for current tooling bugs that violate this."
         ),
-        doc_url="https://github.com/astral-sh/uv/issues/9781",
+        doc_url="https://packaging.python.org/en/latest/specifications/entry-points/",
     ),
     "venv-dual-console-entrypoint": ExpectedBehaviour(
         pe_subsystem=Subsystem.CUI,
@@ -220,14 +250,11 @@ EXPECTATIONS: dict[str, ExpectedBehaviour] = {
         stdout_available=False,
         exit_code=0,
         explanation=(
-            "Dual-mode package GUI entry-point.  The GUI wrapper should not "
-            "create a console.  However, if the venv's pythonw.exe is actually "
-            "a CUI binary (uv venv bug), the child process WILL allocate a "
-            "console window — appearing as an unwanted terminal flash.  "
-            "Investigation: https://github.com/joelvaneenwyk/uv/issues/1  "
-            "Fix in progress: https://github.com/joelvaneenwyk/uv/pull/2"
+            "Dual-mode package GUI entry-point.  The GUI wrapper should NOT "
+            "create a console window.  See KNOWN_DEVIATIONS for current "
+            "tooling bugs that violate this."
         ),
-        doc_url="https://github.com/astral-sh/uv/issues/9781",
+        doc_url="https://packaging.python.org/en/latest/specifications/entry-points/",
     ),
     "venv-python-script-py": ExpectedBehaviour(
         pe_subsystem=Subsystem.CUI,
@@ -240,20 +267,18 @@ EXPECTATIONS: dict[str, ExpectedBehaviour] = {
         ),
     ),
     "venv-pythonw-script-py": ExpectedBehaviour(
-        pe_subsystem=Subsystem.CUI,
+        pe_subsystem=Subsystem.GUI,
         console_window=False,
         stdout_available=True,
         exit_code=0,
         explanation=(
             "Running hello.py via the venv pythonw.exe.  On Windows the venv "
             "pythonw.exe SHOULD be a GUI-subsystem binary (no console window).  "
-            "However, some venv implementations (including uv) create a CUI shim "
-            "instead, which means a console window flashes — this is a known bug.  "
-            "If the PE subsystem shows CUI instead of GUI, that's the issue.  "
-            "Investigation: https://github.com/joelvaneenwyk/uv/issues/1  "
-            "Fix in progress: https://github.com/joelvaneenwyk/uv/pull/2"
+            "This is the ideal behaviour — pythonw.exe must be a true GUI PE "
+            "binary so that no console window is allocated when it launches.  "
+            "See KNOWN_DEVIATIONS for current tooling bugs that violate this."
         ),
-        doc_url="https://github.com/astral-sh/uv/issues/9781",
+        doc_url="https://docs.python.org/3/using/windows.html",
     ),
     # --- shim ---
     "shim-python-script-py": ExpectedBehaviour(
@@ -277,6 +302,84 @@ EXPECTATIONS: dict[str, ExpectedBehaviour] = {
         ),
     ),
 }
+
+
+# ---------------------------------------------------------------------------
+# Known deviations from ideal expectations
+# ---------------------------------------------------------------------------
+# These document cases where current tooling (e.g. uv) produces behaviour
+# that differs from the ideal expectations defined above.  When the upstream
+# bug is fixed, the deviation should be removed.
+#
+# Tests use ``is_known_deviation()`` to decide whether to ``pytest.xfail``
+# instead of asserting the buggy value as correct.
+
+_UV_PYTHONW_ISSUE = "https://github.com/astral-sh/uv/issues/9781"
+_UV_PYTHONW_REASON = (
+    "uv venv creates pythonw.exe as a CUI trampoline instead of a true GUI "
+    "binary.  This causes console window allocation where none should occur.  "
+    "Investigation: https://github.com/joelvaneenwyk/uv/issues/1  "
+    "Fix in progress: https://github.com/joelvaneenwyk/uv/pull/2"
+)
+
+KNOWN_DEVIATIONS: dict[str, list[KnownDeviation]] = {
+    "venv-pythonw-script-py": [
+        KnownDeviation(
+            field="pe_subsystem",
+            ideal_value="GUI",
+            actual_value="CUI",
+            reason=_UV_PYTHONW_REASON,
+            issue_url=_UV_PYTHONW_ISSUE,
+        ),
+        KnownDeviation(
+            field="console_window",
+            ideal_value="No",
+            actual_value="Yes",
+            reason=_UV_PYTHONW_REASON,
+            issue_url=_UV_PYTHONW_ISSUE,
+        ),
+    ],
+    "venv-gui-entrypoint": [
+        KnownDeviation(
+            field="console_window",
+            ideal_value="No",
+            actual_value="Yes",
+            reason=(
+                "GUI wrapper's child pythonw.exe is a CUI trampoline (uv bug), "
+                "causing an unwanted console window flash."
+            ),
+            issue_url=_UV_PYTHONW_ISSUE,
+        ),
+    ],
+    "venv-dual-gui-entrypoint": [
+        KnownDeviation(
+            field="console_window",
+            ideal_value="No",
+            actual_value="Yes",
+            reason=(
+                "Dual-mode GUI wrapper's child pythonw.exe is a CUI trampoline "
+                "(uv bug), causing an unwanted console window flash."
+            ),
+            issue_url=_UV_PYTHONW_ISSUE,
+        ),
+    ],
+}
+
+
+def get_known_deviations(scenario_id: str) -> list[KnownDeviation]:
+    """Return all known deviations for a scenario (empty list if none)."""
+    return KNOWN_DEVIATIONS.get(scenario_id, [])
+
+
+def is_known_deviation(scenario_id: str, field_name: str) -> KnownDeviation | None:
+    """Check if a specific field deviation is a known issue for a scenario.
+
+    Returns the ``KnownDeviation`` if found, otherwise ``None``.
+    """
+    for dev in KNOWN_DEVIATIONS.get(scenario_id, []):
+        if dev.field == field_name:
+            return dev
+    return None
 
 
 @dataclass

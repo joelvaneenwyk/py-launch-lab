@@ -1,7 +1,10 @@
 """
 Integration tests: direct python vs pythonw launch.
 
-These tests spawn real processes and verify observable behaviour.
+These tests spawn real processes and verify observable behaviour against the
+ideal expectations defined in ``launch_lab.expectations.EXPECTATIONS`` (the
+single source of truth for expected Windows launch semantics).
+
 They are skipped on non-Windows unless the scenario does not require Windows.
 
 Covered scenarios:
