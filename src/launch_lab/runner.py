@@ -108,8 +108,22 @@ def _uv_version_hash() -> str:
 
     This is used to namespace the matrix venv cache directory so that
     different uv versions (or custom builds) each get their own venv.
+    When uv is not available, ``_uv_version()`` returns ``None`` and this
+    function falls back to hashing the literal string ``"unknown"`` so the
+    cache key is always a valid directory-name component.
     """
     ver = _uv_version() or "unknown"
+    return hashlib.sha256(ver.encode()).hexdigest()[:10]
+
+
+def _hash_version(ver: str) -> str:
+    """Return a 10-char SHA-256 hash for a version string.
+
+    Unlike :func:`_uv_version_hash` this helper does **not** call
+    ``uv --version`` — it hashes an already-resolved version string.
+    Use it when the version is already known to avoid redundant
+    subprocess invocations.
+    """
     return hashlib.sha256(ver.encode()).hexdigest()[:10]
 
 
@@ -423,6 +437,10 @@ def run_scenario(
     When *save_artifact* is True the result JSON is written to *artifact_dir*
     (defaults to ``artifacts/json/``).
     """
+    # Resolve uv version once upfront — used for both ScenarioResult.uv_version
+    # and the artifact filename hash.  _uv_version() returns None when uv is
+    # not available; _hash_version is only called when the version is known so
+    # the hash is never a placeholder like "unknown".
     uv_ver = _uv_version()
 
     cmd = _build_command(scenario)
@@ -572,7 +590,7 @@ def run_scenario(
         os_version=_os_version(),
         python_version=_python_version(),
         uv_version=uv_ver,
-        uv_version_hash=_uv_version_hash(),
+        uv_version_hash=_hash_version(uv_ver) if uv_ver else None,
         launcher=_parse_launcher(scenario.launcher),
         mode=scenario.mode,
         fixture=scenario.fixture,

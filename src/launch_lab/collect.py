@@ -1,7 +1,7 @@
 """
 Artifact collector for py-launch-lab.
 
-Takes a ScenarioResult and writes it to artifacts/json/<scenario-id>.json.
+Serialises a ScenarioResult to JSON and writes it to the artifacts directory.
 
 When the result contains a ``uv_version_hash``, the file is written as
 ``<scenario-id>__<hash>.json`` so that results from different uv builds

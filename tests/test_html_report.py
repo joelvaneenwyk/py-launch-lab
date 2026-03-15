@@ -14,6 +14,7 @@ from launch_lab.html_report import (
     _esc,
     _exit_badge,
     _render_html_report,
+    _result_key,
     build_html_report,
 )
 from launch_lab.expectations import check_expectations
@@ -21,8 +22,13 @@ from launch_lab.models import LauncherKind, ScenarioResult, Subsystem
 
 
 def _render(results: list[ScenarioResult]) -> str:
-    """Helper that wraps _render_html_report with default anomaly_map/ai_summary."""
-    anomaly_map = {r.scenario_id: check_expectations(r) for r in results}
+    """Helper that wraps _render_html_report with default anomaly_map/ai_summary.
+
+    Keys the anomaly map by _result_key(r) to match production behaviour and
+    correctly handle multi-version scenarios where the same scenario_id appears
+    for more than one uv build.
+    """
+    anomaly_map = {_result_key(r): check_expectations(r) for r in results}
     return _render_html_report(results, anomaly_map, None)
 
 

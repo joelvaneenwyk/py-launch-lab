@@ -12,11 +12,24 @@ on:
         required: false
         default: ""
         type: string
+      custom-uv-source:
+        description: "Custom uv source (git URL or path). Leave empty to use default fork."
+        required: false
+        default: "https://github.com/joelvaneenwyk/uv"
+        type: string
+      skip-custom-uv:
+        description: "Set to 'true' to skip the custom uv build and comparison run."
+        required: false
+        default: "false"
+        type: string
 
 jobs:
   python-tests:
     name: Python tests (Windows)
     runs-on: windows-latest
+    permissions:
+      contents: read
+      models: read
     steps:
       - uses: actions/checkout@v4
 
@@ -49,11 +62,54 @@ jobs:
         run: uv run pytest tests/integration -v
         continue-on-error: true
 
-      - name: Run full scenario matrix
+      - name: Run full scenario matrix (official uv)
         run: uv run py-launch-lab matrix run
         continue-on-error: true
 
+      # -- Custom uv comparison run ------------------------------------------
+      # Build the custom uv fork from source and re-run the matrix so that
+      # artifacts from both versions coexist in artifacts/json/ (they have
+      # different uv_version_hash suffixes in their filenames).
+
+      - name: Set up Rust toolchain (for custom uv build)
+        if: ${{ github.event.inputs.skip-custom-uv != 'true' }}
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+        continue-on-error: true
+
+      - name: Restore cargo registry cache
+        if: ${{ github.event.inputs.skip-custom-uv != 'true' }}
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('.cargo/config.toml') }}-v1
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-
+        continue-on-error: true
+
+      - name: Build custom uv from fork
+        id: build-custom-uv
+        if: ${{ github.event.inputs.skip-custom-uv != 'true' }}
+        env:
+          CUSTOM_UV_SOURCE: ${{ github.event.inputs.custom-uv-source || 'https://github.com/joelvaneenwyk/uv' }}
+        run: uv run py-launch-lab setup-uv "$env:CUSTOM_UV_SOURCE"
+        continue-on-error: true
+
+      - name: Run full scenario matrix (custom uv)
+        if: ${{ steps.build-custom-uv.outcome == 'success' }}
+        env:
+          CUSTOM_UV_SOURCE: ${{ github.event.inputs.custom-uv-source || 'https://github.com/joelvaneenwyk/uv' }}
+        run: uv run py-launch-lab matrix run --custom-uv "$env:CUSTOM_UV_SOURCE"
+        continue-on-error: true
+
+      # -- Report generation --------------------------------------------------
+
       - name: Generate report
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: uv run py-launch-lab report build --findings docs/findings
         continue-on-error: true
 
@@ -103,6 +159,8 @@ jobs:
   rust-shim:
     name: Rust shim (Windows)
     runs-on: windows-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -133,8 +191,10 @@ jobs:
           echo "| Tests | ${{ steps.test.outcome }} |" >> "$GITHUB_STEP_SUMMARY"
 
   python-tests-ubuntu:
-    name: Python tests (Ubuntu — import/schema only)
+    name: Python tests (Ubuntu -- import/schema only)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 

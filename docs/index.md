@@ -2,6 +2,20 @@
 
 > Windows-first conformance and evidence-gathering lab for Python launch modes.
 
+## Latest Results
+
+The interactive HTML report below shows the **most recent CI run results** for both
+the **official uv release** and the **custom `joelvaneenwyk/uv` build** side by side.
+Use the column filters to compare behaviour across uv versions and identify which
+anomalies have been fixed in the custom build.
+
+[**:material-chart-bar: Open Full Interactive Report &rarr;**](report.html){ .md-button .md-button--primary }
+[**:material-file-find: View CI Findings (Markdown)**](findings/report.md){ .md-button }
+
+!!! tip "Filtering by uv version"
+    Use the **uv Version** column filter in the interactive report to see only the
+    official release results, only the custom build results, or both at once.
+
 ## What is this?
 
 **Python Launch Lab** (`py-launch-lab`) systematically measures how Python code
