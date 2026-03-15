@@ -102,6 +102,36 @@ def _parse_launcher(value: str) -> LauncherKind:
 # Cache to avoid recreating the venv for every scenario in a single run.
 _venv_provisioned: dict[str, Path] = {}
 
+# Sentinel filename written into the venv to record the mtime of the custom
+# uv binary at creation time.  Lets us skip unnecessary venv rebuilds when
+# the binary hasn't changed across runs.
+_MTIME_SENTINEL = ".uv_binary_mtime"
+
+
+def _uv_binary_mtime(uv_bin: str) -> float | None:
+    """Return the modification time of a uv binary, or None if unavailable."""
+    try:
+        return Path(uv_bin).stat().st_mtime
+    except OSError:
+        return None
+
+
+def _read_stored_mtime(venv_dir: Path) -> float | None:
+    """Read the uv binary mtime previously stored in *venv_dir*.
+
+    Returns ``None`` if the sentinel file is absent or unreadable.
+    """
+    sentinel = venv_dir / _MTIME_SENTINEL
+    try:
+        return float(sentinel.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+
+
+def _write_mtime_sentinel(venv_dir: Path, mtime: float) -> None:
+    """Write the uv binary mtime into the venv as a sentinel file."""
+    (venv_dir / _MTIME_SENTINEL).write_text(str(mtime), encoding="utf-8")
+
 
 def _uv_version_hash() -> str:
     """Return a short hash based on the effective uv version string.
@@ -159,16 +189,41 @@ def _ensure_matrix_venv() -> Path:
 
     # ----- Decide whether to (re)create the venv -----
     need_create = False
+    _current_uv_mtime: float | None = None
 
     if is_custom_uv_configured():
-        if venv_dir.exists():
+        # Only invalidate the venv when the custom uv binary has actually
+        # been rebuilt (mtime changed), not on every run.  This avoids
+        # slow venv teardown/recreate cycles when the same binary is reused
+        # across multiple ``matrix run`` invocations in CI.
+        _current_uv_mtime = _uv_binary_mtime(uv_bin)
+        stored_mtime = _read_stored_mtime(venv_dir) if venv_dir.exists() else None
+        binary_changed = (
+            _current_uv_mtime is None
+            or stored_mtime is None
+            or _current_uv_mtime != stored_mtime
+        )
+        if not venv_dir.exists():
+            need_create = True
+        elif binary_changed:
+            if stored_mtime is None:
+                reason = "no mtime sentinel found (first custom run)"
+            else:
+                reason = f"binary was rebuilt (mtime {stored_mtime:.1f} -> {_current_uv_mtime or 0:.1f})"
             logger.info(
-                "Custom uv is active — removing existing venv to force "
-                "re-creation of entrypoint wrappers: %s",
+                "Custom uv is active and %s -- removing existing venv to "
+                "force re-creation of entrypoint wrappers: %s",
+                reason,
                 venv_dir,
             )
             shutil.rmtree(venv_dir, ignore_errors=True)
-        need_create = True
+            need_create = True
+        else:
+            logger.info(
+                "Custom uv binary unchanged (mtime=%.1f) -- reusing existing venv: %s",
+                _current_uv_mtime,
+                venv_dir,
+            )
     elif not python_exe.exists():
         need_create = True
 
@@ -176,12 +231,17 @@ def _ensure_matrix_venv() -> Path:
     if need_create:
         _CACHE_DIR.mkdir(parents=True, exist_ok=True)
         logger.info(
-            "Creating new venv with '%s venv %s' …",
+            "Creating new venv with '%s venv %s' ...",
             uv_bin,
             venv_dir,
         )
         subprocess.check_call([uv_bin, "venv", str(venv_dir)], timeout=60)
         logger.info("Venv created: %s", venv_dir)
+        # Record the binary mtime so the next run can detect if it was
+        # rebuilt and decide whether to re-create the venv.
+        if is_custom_uv_configured() and _current_uv_mtime is not None:
+            _write_mtime_sentinel(venv_dir, _current_uv_mtime)
+            logger.info("Custom uv binary mtime recorded: %.1f", _current_uv_mtime)
     else:
         logger.info("Reusing existing venv: %s", venv_dir)
 
@@ -190,7 +250,7 @@ def _ensure_matrix_venv() -> Path:
         pkg_path = _FIXTURES_DIR / pkg
         if pkg_path.exists():
             logger.info(
-                "Installing fixture package '%s' into venv (uv pip install --python %s %s) …",
+                "Installing fixture package '%s' into venv (uv pip install --python %s %s) ...",
                 pkg,
                 python_exe,
                 pkg_path,
