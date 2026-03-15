@@ -11,7 +11,6 @@ tasks:
   default:
     desc: Show available tasks
     cmds:
-      - task: test
       - task: matrix-run
       - task: report
 
