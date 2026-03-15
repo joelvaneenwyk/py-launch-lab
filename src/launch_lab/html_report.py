@@ -593,6 +593,29 @@ tr.anomaly-detail-row td {
     border: 1px solid var(--border);
 }
 
+/* uv versions summary table */
+.uv-versions-table {
+    width: auto;
+    margin-bottom: 1.5rem;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+.uv-versions-table th {
+    background: #2d333b;
+    color: var(--header-fg);
+    text-align: left;
+    padding: 0.5rem 1rem;
+    font-weight: 600;
+    cursor: default;
+}
+.uv-versions-table th:hover { background: #3a3f47; }
+.uv-versions-table td {
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid var(--border);
+}
+.uv-versions-table tr:nth-child(even) { background: var(--row-alt); }
+.uv-versions-table tr:hover { background: #eef2f7; }
+
 footer {
     margin-top: 3rem;
     padding-top: 1rem;
@@ -809,6 +832,106 @@ def _render_filter_select(options: list[str], placeholder: str = "All") -> str:
     return "".join(parts)
 
 
+def _render_uv_versions_table(results: list[ScenarioResult]) -> str:
+    """Render a summary table of uv versions tested and their sources.
+
+    Groups results by ``uv_version`` and ``uv_version_hash`` to identify
+    distinct builds.  For each build, infers whether it is the official
+    Astral release or a custom fork build based on the version hash presence
+    and the number of distinct builds.
+    """
+    # Collect unique (version, hash) pairs and count scenarios for each
+    version_info: dict[tuple[str, str | None], int] = {}
+    for r in results:
+        key = (r.uv_version or "N/A", r.uv_version_hash)
+        version_info[key] = version_info.get(key, 0) + 1
+
+    if not version_info:
+        return "<p><em>No uv version information available.</em></p>"
+
+    sorted_versions = sorted(version_info.keys(), key=lambda k: (k[0], k[1] or ""))
+
+    # Infer source labels: if there is more than one distinct hash for
+    # versions that look similar, the first is likely official and
+    # additional ones are custom builds.
+    seen_version_strings: dict[str, int] = {}
+    for ver, _hash in sorted_versions:
+        seen_version_strings[ver] = seen_version_strings.get(ver, 0) + 1
+
+    # Check whether any build carries a '+' custom marker.
+    any_custom_marker = any("+" in ver for ver, _hash in sorted_versions)
+
+    def _infer_source(
+        ver: str,
+        ver_hash: str | None,
+        occurrence: int,
+        idx: int,
+        has_multiple: bool,
+    ) -> str:
+        """Infer whether a build is the official release or a custom fork.
+
+        Uses the ``+`` marker in the version string (e.g. ``0.7.12+dev``)
+        as a reliable indicator of a custom build.  When no marker is
+        present and there is only one build, it is labelled as official.
+        Otherwise a neutral "Unclassified" label is used.
+        """
+        _OFFICIAL = "Official release (astral-sh/uv)"
+        _CUSTOM = "Custom build (joelvaneenwyk/uv fork)"
+        _UNKNOWN = "Unclassified build"
+        # A '+' suffix (e.g. "0.7.12+dev") is an explicit custom marker.
+        if "+" in ver:
+            return _CUSTOM
+        # When only one build is present, it is almost certainly official.
+        if not has_multiple:
+            return _OFFICIAL
+        # If another build carries the '+' marker, this clean version
+        # is the official release.
+        if any_custom_marker:
+            return _OFFICIAL
+        # Multiple builds, same version string with different hashes --
+        # first occurrence is assumed official, others custom.
+        if seen_version_strings.get(ver, 1) > 1:
+            return _OFFICIAL if occurrence == 1 else _CUSTOM
+        # Multiple builds but different version strings and no explicit
+        # marker -- we cannot reliably determine the source.
+        return _UNKNOWN
+
+    parts: list[str] = []
+    parts.append('<table class="uv-versions-table">')
+    parts.append("<thead><tr>")
+    parts.append("<th>uv Version</th>")
+    parts.append("<th>Source</th>")
+    parts.append("<th>Version Hash</th>")
+    parts.append("<th>Scenarios</th>")
+    parts.append("</tr></thead>")
+    parts.append("<tbody>")
+
+    # Track how many times we've seen each version string to label sources
+    version_occurrence: dict[str, int] = {}
+    has_multiple_builds = len(sorted_versions) > 1
+
+    for idx, (ver, ver_hash) in enumerate(sorted_versions):
+        count = version_info[(ver, ver_hash)]
+        version_occurrence[ver] = version_occurrence.get(ver, 0) + 1
+
+        source = _infer_source(
+            ver, ver_hash, version_occurrence[ver], idx, has_multiple_builds,
+        )
+
+        stripped_hash = ver_hash.strip() if ver_hash else ""
+        hash_display = _esc(stripped_hash[:12]) if stripped_hash else "N/A"
+
+        parts.append("<tr>")
+        parts.append(f"<td><code>{_esc(ver)}</code></td>")
+        parts.append(f"<td>{_esc(source)}</td>")
+        parts.append(f"<td><code>{hash_display}</code></td>")
+        parts.append(f"<td>{count}</td>")
+        parts.append("</tr>")
+
+    parts.append("</tbody></table>")
+    return "\n".join(parts)
+
+
 def _render_html_report(
     results: list[ScenarioResult],
     anomaly_map: dict[str, list[Anomaly]],
@@ -878,26 +1001,32 @@ def _render_html_report(
     parts.append("</div>")
 
     # Overview / purpose section
-    parts.append("<h2>Overview</h2>")
+    parts.append("<h2>Purpose</h2>")
     parts.append(
-        "<p><strong>Python Launch Lab</strong> is a conformance and evidence-gathering "
-        "tool that systematically tests how different Python launchers behave on "
-        "Windows. It exercises every common way to start a Python process &mdash; "
-        "the standard <code>python.exe</code> / <code>pythonw.exe</code> interpreters, "
+        "<p>The primary goal of this report is to <strong>verify that on Windows, "
+        "running <code>pythonw.exe</code> or GUI-subsystem scripts does not open "
+        "a Console or Terminal window</strong>. This is the fundamental contract "
+        "of the GUI subsystem: GUI applications should launch silently without "
+        "flashing a console window, even briefly.</p>"
+    )
+    parts.append(
+        "<p><strong>Python Launch Lab</strong> systematically tests every common "
+        "way to start a Python process on Windows &mdash; the standard "
+        "<code>python.exe</code> / <code>pythonw.exe</code> interpreters, "
         "the <code>uv</code> tool runner (<code>uv run</code>, <code>uvx</code>, "
         "<code>uvw</code>), virtual-environment entry-point wrappers generated by "
         "<code>pip</code> or <code>uv</code>, and the custom <code>pyshim-win</code> "
-        "GUI-subsystem shim.</p>"
+        "GUI-subsystem shim &mdash; and records whether each launcher creates "
+        "a console window, a GUI window, or neither.</p>"
     )
     parts.append(
-        "<p>The goal is to answer: <em>&ldquo;Does each launcher create the expected "
-        "kind of process?&rdquo;</em> Specifically:</p>"
+        "<p>The key questions this report answers:</p>"
     )
     parts.append("<ul>")
     parts.append(
         "<li><strong>Console Allocated</strong> &mdash; Did Windows allocate a console "
         "host (<code>conhost.exe</code>) for the process? Console (CUI) executables "
-        "do this by default; GUI executables should not.</li>"
+        "do this by default; GUI executables <em>should not</em>.</li>"
     )
     parts.append(
         "<li><strong>GUI Window Spawned</strong> &mdash; Did the process create a "
@@ -914,9 +1043,20 @@ def _render_html_report(
     parts.append(
         "<p>Rows highlighted in orange indicate <strong>anomalies</strong> &mdash; "
         "cases where observed behaviour differs from what the PE subsystem and "
-        "scenario type predict. Expand an anomaly row to see a detailed "
+        "scenario type predict (e.g. a GUI-subsystem launcher unexpectedly "
+        "allocating a console window). Expand an anomaly row to see a detailed "
         "explanation of what went wrong and why.</p>"
     )
+
+    # uv Versions Tested table
+    parts.append("<h2>uv Versions Tested</h2>")
+    parts.append(
+        "<p>This report includes results from multiple <code>uv</code> builds "
+        "run side by side. The table below identifies each version tested "
+        "and where it came from. Use the <strong>uv Version</strong> column "
+        "filter in the results table to compare behaviour across builds.</p>"
+    )
+    parts.append(_render_uv_versions_table(results))
 
     # AI summary (if available)
     if ai_summary:

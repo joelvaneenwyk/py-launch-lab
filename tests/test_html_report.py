@@ -14,6 +14,7 @@ from launch_lab.html_report import (
     _esc,
     _exit_badge,
     _render_html_report,
+    _render_uv_versions_table,
     _result_key,
     build_html_report,
 )
@@ -292,3 +293,98 @@ def test_load_all_results_multi_version(tmp_path: Path):
     assert len(results) == 2
     versions = {r.uv_version for r in results}
     assert versions == {"uv 0.5.0", "uv 0.6.0"}
+
+
+# ---------------------------------------------------------------------------
+# Tests for _render_uv_versions_table
+# ---------------------------------------------------------------------------
+
+
+def test_uv_versions_table_single_build():
+    """A single uv build should render one row labelled as official."""
+    results = [
+        _make_result(scenario_id="s1", exit_code=0, uv_version="0.7.12",
+                     uv_version_hash="aaa1111111"),
+        _make_result(scenario_id="s2", exit_code=0, uv_version="0.7.12",
+                     uv_version_hash="aaa1111111"),
+    ]
+    html = _render_uv_versions_table(results)
+    assert "uv Version" in html
+    assert "Source" in html
+    assert "Version Hash" in html
+    assert "Scenarios" in html
+    assert "0.7.12" in html
+    assert "aaa1111111" in html
+    assert "Official release" in html
+    # Only one data row
+    assert html.count("<tr>") == 2  # 1 header + 1 data
+
+
+def test_uv_versions_table_two_builds():
+    """Two distinct uv builds should render two rows with correct grouping."""
+    results = [
+        _make_result(scenario_id="s1", exit_code=0, uv_version="0.7.12",
+                     uv_version_hash="aaa1111111"),
+        _make_result(scenario_id="s2", exit_code=0, uv_version="0.7.12",
+                     uv_version_hash="aaa1111111"),
+        _make_result(scenario_id="s1", exit_code=0, uv_version="0.7.12+dev",
+                     uv_version_hash="bbb2222222"),
+        _make_result(scenario_id="s2", exit_code=0, uv_version="0.7.12+dev",
+                     uv_version_hash="bbb2222222"),
+    ]
+    html = _render_uv_versions_table(results)
+    # Both versions should appear
+    assert "0.7.12" in html
+    assert "0.7.12+dev" in html
+    # Both hashes should appear (truncated to 12 chars)
+    assert "aaa1111111" in html
+    assert "bbb2222222" in html
+    # Source labels: official for base version, custom for +dev
+    assert "Official release" in html
+    assert "Custom build" in html
+    # Two data rows
+    assert html.count("<tr>") == 3  # 1 header + 2 data
+    # Each build has 2 scenarios
+    assert html.count(">2<") == 2
+
+
+def test_uv_versions_table_custom_marker_in_version():
+    """A version with '+' should always be labelled as custom build."""
+    results = [
+        _make_result(scenario_id="s1", exit_code=0, uv_version="0.7.12+custom",
+                     uv_version_hash="ccc3333333"),
+    ]
+    html = _render_uv_versions_table(results)
+    assert "Custom build" in html
+
+
+def test_uv_versions_table_no_results():
+    """Empty results should produce a fallback message."""
+    html = _render_uv_versions_table([])
+    assert "No uv version information" in html
+
+
+def test_uv_versions_table_hash_strip_before_slice():
+    """Whitespace in hash should be stripped before truncation."""
+    results = [
+        _make_result(scenario_id="s1", exit_code=0, uv_version="0.7.12",
+                     uv_version_hash="  abc123456789xyz  "),
+    ]
+    html = _render_uv_versions_table(results)
+    # Should show stripped+sliced value, not whitespace-prefixed
+    assert "abc123456789" in html
+
+
+def test_uv_versions_table_deterministic_sort():
+    """Multiple builds should be sorted deterministically by version and hash."""
+    results = [
+        _make_result(scenario_id="s1", exit_code=0, uv_version="0.7.12",
+                     uv_version_hash="zzz9999999"),
+        _make_result(scenario_id="s2", exit_code=0, uv_version="0.7.12",
+                     uv_version_hash="aaa1111111"),
+    ]
+    html = _render_uv_versions_table(results)
+    # aaa hash should appear before zzz hash
+    pos_aaa = html.index("aaa1111111")
+    pos_zzz = html.index("zzz9999999")
+    assert pos_aaa < pos_zzz

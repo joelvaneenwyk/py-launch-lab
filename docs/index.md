@@ -2,19 +2,21 @@
 
 > Windows-first conformance and evidence-gathering lab for Python launch modes.
 
-## Latest Results
+## Interactive Report
 
-The interactive HTML report below shows the **most recent CI run results** for both
-the **official uv release** and the **custom `joelvaneenwyk/uv` build** side by side.
-Use the column filters to compare behaviour across uv versions and identify which
-anomalies have been fixed in the custom build.
+The **interactive HTML report** is the primary output of this project and is
+the **default landing page** of the deployed site. It shows the most recent CI
+run results for both the **official uv release** and the **custom
+`joelvaneenwyk/uv` build** side by side, with filters, sorting, and anomaly
+explanations.
 
-[**:material-chart-bar: Open Full Interactive Report &rarr;**](report.md){ .md-button .md-button--primary }
+[**:material-chart-bar: Open Interactive Report &rarr;**](report.md){ .md-button .md-button--primary }
 [**:material-file-find: View CI Findings (Markdown)**](findings/report.md){ .md-button }
 
-!!! tip "Filtering by uv version"
-    Use the **uv Version** column filter in the interactive report to see only the
-    official release results, only the custom build results, or both at once.
+!!! tip "The report is the landing page"
+    When the CI pipeline runs successfully, the site homepage automatically
+    redirects to the interactive report. Use the **uv Version** column filter
+    to compare official vs. custom uv results.
 
 ## What is this?
 
