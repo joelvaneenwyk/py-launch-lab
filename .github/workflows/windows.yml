@@ -36,7 +36,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           version: ${{ github.event.inputs.uv-version || 'latest' }}
@@ -77,7 +77,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           version: ${{ github.event.inputs.uv-version || 'latest' }}
@@ -123,7 +123,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install uv (official, for running py-launch-lab)
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           version: ${{ github.event.inputs.uv-version || 'latest' }}
@@ -134,16 +134,31 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev
 
-      # -- Determine cache key based on remote HEAD SHA ----------------------
+      # -- Compute stable URL hash (sha256[:12]) for cache key fallback -------
+      # This hash matches uv_provider._resolve_git_source() which uses
+      # hashlib.sha256(url.encode()).hexdigest()[:12] to name its clone dir.
+      # Python is always available on the runner, so this is fully reliable.
+      - name: Compute custom uv URL hash (stable cache key)
+        id: custom-uv-url-hash
+        shell: bash
+        env:
+          _CUSTOM_UV_SOURCE_FOR_HASH: ${{ env.CUSTOM_UV_SOURCE }}
+        run: |
+          URL_HASH=$(python3 -c "import os, hashlib; print(hashlib.sha256(os.environ['_CUSTOM_UV_SOURCE_FOR_HASH'].encode()).hexdigest()[:12])")
+          echo "url_hash=$URL_HASH" >> "$GITHUB_OUTPUT"
+          echo "URL hash: $URL_HASH"
+
+      # -- Determine precise cache key from remote HEAD SHA ------------------
       - name: Get custom uv remote HEAD SHA (for cache key)
         id: custom-uv-sha
         shell: bash
         run: |
           SHA=$(git ls-remote "$CUSTOM_UV_SOURCE" HEAD 2>/dev/null | cut -f1 | head -c 12 || true)
           if [ -z "$SHA" ]; then
-            # Fall back to a run-unique value so we never accidentally restore a
-            # stale build into an unknown cache slot.
-            SHA="run-${{ github.run_id }}"
+            # Fall back to the stable URL hash so the cache is always reusable
+            # even when git ls-remote is unavailable (e.g. rate limits).
+            SHA="${{ steps.custom-uv-url-hash.outputs.url_hash }}"
+            echo "git ls-remote unavailable; using URL hash as fallback: $SHA"
           fi
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "Remote HEAD SHA: $SHA"
@@ -155,62 +170,84 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.CUSTOM_UV_BIN_DIR }}
-          key: custom-uv-bin-${{ runner.os }}-${{ steps.custom-uv-sha.outputs.sha || format('run-{0}', github.run_id) }}
+          key: custom-uv-bin-${{ runner.os }}-${{ steps.custom-uv-sha.outputs.sha || steps.custom-uv-url-hash.outputs.url_hash }}
+          restore-keys: |
+            custom-uv-bin-${{ runner.os }}-${{ steps.custom-uv-url-hash.outputs.url_hash }}
+            custom-uv-bin-${{ runner.os }}-
         continue-on-error: true
 
-      # -- On cache miss: set up Rust + cargo registry and build from source --
-      - name: Set up Rust toolchain (cache miss only)
-        if: steps.custom-uv-bin-cache.outputs.cache-hit != 'true'
+      # Check whether a usable binary actually exists after the cache restore.
+      # A cache hit can produce an empty directory (e.g. if a previous build
+      # failed after the cache key was saved).  Build steps are gated on the
+      # binary's presence, not just the cache-hit flag.
+      - name: Check if cached custom uv binary is usable
+        id: binary-check
+        shell: pwsh
+        run: |
+          if (Test-Path "$env:CUSTOM_UV_BIN_DIR\uv.exe") {
+            Write-Host "Cached binary found: $env:CUSTOM_UV_BIN_DIR\uv.exe"
+            "available=true" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Host "No cached binary at $env:CUSTOM_UV_BIN_DIR\uv.exe; will build from source."
+            "available=false" >> $env:GITHUB_OUTPUT
+          }
+
+      # -- On binary missing: set up Rust + cargo registry and build ----------
+      - name: Set up Rust toolchain (binary missing)
+        if: steps.binary-check.outputs.available != 'true'
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
         continue-on-error: true
 
-      - name: Restore cargo registry cache (cache miss only)
-        if: steps.custom-uv-bin-cache.outputs.cache-hit != 'true'
+      - name: Restore cargo registry cache (binary missing)
+        if: steps.binary-check.outputs.available != 'true'
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          # The cargo registry contains downloaded crate sources, which are
-          # determined by Cargo.lock (not the custom uv source revision).
-          # Use a stable key so the registry is shared across all custom uv
-          # build runs and only invalidated manually via the -v1 suffix.
+          # Cargo registry contents are determined by Cargo.lock, not by the
+          # custom uv source revision.  Use a stable key so the registry is
+          # shared across all custom uv build runs.
           key: cargo-registry-${{ runner.os }}-v1
           restore-keys: |
             cargo-registry-${{ runner.os }}-
         continue-on-error: true
 
-      - name: Build custom uv from source (cache miss only)
+      - name: Build custom uv from source (binary missing)
         id: build-custom-uv
-        if: steps.custom-uv-bin-cache.outputs.cache-hit != 'true'
+        if: steps.binary-check.outputs.available != 'true'
         run: uv run py-launch-lab setup-uv "$env:CUSTOM_UV_SOURCE"
         continue-on-error: true
 
-      # Copy the freshly-built binaries into the cache directory so they
-      # are picked up by the cache action at the end of the job.
-      - name: Copy custom uv binaries to cache dir (after build)
+      # Copy the freshly-built binaries into the cache dir so the cache action
+      # saves them at job end and future runs get an immediate cache hit.
+      - name: Copy custom uv binaries to binary cache dir (after build)
         if: >-
-          steps.custom-uv-bin-cache.outputs.cache-hit != 'true' &&
+          steps.binary-check.outputs.available != 'true' &&
           steps.build-custom-uv.outcome == 'success'
         shell: pwsh
         run: |
-          # Compute url_hash — must match uv_provider._resolve_git_source()
-          # which uses the first 12 hex chars of SHA-256(url).
-          $bytes = [System.Text.Encoding]::UTF8.GetBytes($env:CUSTOM_UV_SOURCE)
-          $sha256 = [System.Security.Cryptography.SHA256]::Create()
-          $hex = ($sha256.ComputeHash($bytes) | ForEach-Object { $_.ToString("x2") }) -join ''
-          $urlHash = $hex.Substring(0, 12)
-
+          # Use the pre-computed URL hash (same algorithm as uv_provider).
+          $urlHash = "${{ steps.custom-uv-url-hash.outputs.url_hash }}"
           $srcDir = ".cache\custom_uv\$urlHash\target\release"
           New-Item -ItemType Directory -Path $env:CUSTOM_UV_BIN_DIR -Force | Out-Null
+          $copied = $false
           foreach ($bin in @("uv.exe", "uvw.exe")) {
             $src = "$srcDir\$bin"
             if (Test-Path $src) {
               Copy-Item $src "$env:CUSTOM_UV_BIN_DIR\$bin" -Force
-              Write-Host "Copied $bin to cache dir"
+              Write-Host "Copied $bin to $env:CUSTOM_UV_BIN_DIR"
+              $copied = $true
             }
+          }
+          if (-not $copied) {
+            Write-Warning "No binaries found in $srcDir; binary cache will not be populated."
+            # Exit 1 so the step is visibly marked as failed in the job
+            # summary.  continue-on-error below lets the matrix run step
+            # and the artifact upload proceed regardless.
+            exit 1
           }
         continue-on-error: true
 
@@ -283,7 +320,7 @@ jobs:
         continue-on-error: true
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           version: ${{ github.event.inputs.uv-version || 'latest' }}
@@ -428,7 +465,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           version: ${{ github.event.inputs.uv-version || 'latest' }}
