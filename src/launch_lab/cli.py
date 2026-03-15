@@ -293,7 +293,7 @@ def scenario_run(
     console.print(f"  console_window     = {result.console_window_detected}")
     console.print(f"  visible_window     = {result.visible_window_detected}")
     console.print(f"  processes          = {len(result.processes)}")
-    console.print(f"[green]Artifact saved → {output}/{scenario_id}.json[/green]")
+    console.print(f"[green]Artifact saved -> {output}/{scenario_id}.json[/green]")
 
 
 @app.command("matrix")
@@ -528,11 +528,11 @@ def serve_cmd(
         findings_dir=output_path / "findings" if (output_path / "findings").exists() else None,
     )
     if md_dest:
-        console.print(f"  [green]Markdown report → {md_dest}[/green]")
+        console.print(f"  [green]Markdown report -> {md_dest}[/green]")
 
     html_dest = build_html_report(json_dir=json_path, output_dir=html_output, force=force)
     if html_dest:
-        console.print(f"  [green]HTML report → {html_dest}[/green]")
+        console.print(f"  [green]HTML report -> {html_dest}[/green]")
     else:
         console.print("  [yellow]No results to report — run the matrix first.[/yellow]")
         raise typer.Exit(1)
