@@ -313,13 +313,22 @@ EXPECTATIONS: dict[str, ExpectedBehaviour] = {
 #
 # Tests use ``is_known_deviation()`` to decide whether to ``pytest.xfail``
 # instead of asserting the buggy value as correct.
+#
+# STATUS:
+#   Stock uv (as of 0.10.4) still creates pythonw.exe as a CUI trampoline.
+#   A custom fork (https://github.com/joelvaneenwyk/uv) fixes this.
+#   When the fix is merged upstream and released, remove these deviations.
+#
+#   Upstream issue: https://github.com/astral-sh/uv/issues/9781
+#   Investigation:  https://github.com/joelvaneenwyk/uv/issues/1
+#   Fix PR:         https://github.com/joelvaneenwyk/uv/pull/2
 
 _UV_PYTHONW_ISSUE = "https://github.com/astral-sh/uv/issues/9781"
 _UV_PYTHONW_REASON = (
-    "uv venv creates pythonw.exe as a CUI trampoline instead of a true GUI "
+    "Stock uv creates pythonw.exe as a CUI trampoline instead of a true GUI "
     "binary.  This causes console window allocation where none should occur.  "
-    "Investigation: https://github.com/joelvaneenwyk/uv/issues/1  "
-    "Fix in progress: https://github.com/joelvaneenwyk/uv/pull/2"
+    "Fixed in custom fork: https://github.com/joelvaneenwyk/uv/pull/2  "
+    "Upstream issue: https://github.com/astral-sh/uv/issues/9781"
 )
 
 KNOWN_DEVIATIONS: dict[str, list[KnownDeviation]] = {
@@ -345,7 +354,7 @@ KNOWN_DEVIATIONS: dict[str, list[KnownDeviation]] = {
             ideal_value="No",
             actual_value="Yes",
             reason=(
-                "GUI wrapper's child pythonw.exe is a CUI trampoline (uv bug), "
+                "GUI wrapper's child pythonw.exe is a CUI trampoline in stock uv, "
                 "causing an unwanted console window flash."
             ),
             issue_url=_UV_PYTHONW_ISSUE,
@@ -358,7 +367,7 @@ KNOWN_DEVIATIONS: dict[str, list[KnownDeviation]] = {
             actual_value="Yes",
             reason=(
                 "Dual-mode GUI wrapper's child pythonw.exe is a CUI trampoline "
-                "(uv bug), causing an unwanted console window flash."
+                "in stock uv, causing an unwanted console window flash."
             ),
             issue_url=_UV_PYTHONW_ISSUE,
         ),

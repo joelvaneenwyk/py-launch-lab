@@ -226,14 +226,14 @@ class TestKnownDeviations:
                 )
 
     def test_venv_pythonw_has_pe_subsystem_deviation(self):
-        """The venv-pythonw-script-py scenario should have a pe_subsystem deviation."""
+        """Stock uv creates pythonw.exe as CUI — this should be a known deviation."""
         dev = is_known_deviation("venv-pythonw-script-py", "pe_subsystem")
         assert dev is not None
         assert dev.ideal_value == "GUI"
         assert dev.actual_value == "CUI"
 
     def test_venv_gui_has_console_window_deviation(self):
-        """The venv-gui-entrypoint scenario should have a console_window deviation."""
+        """Stock uv's CUI pythonw causes GUI wrappers to flash a console."""
         dev = is_known_deviation("venv-gui-entrypoint", "console_window")
         assert dev is not None
         assert dev.ideal_value == "No"

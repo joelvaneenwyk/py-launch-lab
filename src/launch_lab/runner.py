@@ -307,11 +307,22 @@ def _build_keepalive_cmd(exe: str) -> list[str] | None:
         # Shim wraps python; delegate through the shim
         return [exe, "--hide-console", "--", "python", "-c", "import time; time.sleep(10)"]
     # For venv entrypoint wrappers (.exe in a Scripts/ or bin/ dir alongside
-    # python.exe), use the sibling python interpreter as the keepalive.
+    # python.exe), use the appropriate sibling interpreter as the keepalive.
+    # GUI wrappers (project.gui-scripts) invoke pythonw.exe, so the keepalive
+    # must also use pythonw.exe — using python.exe (CUI) would create a false-
+    # positive console window that doesn't reflect actual launch behaviour.
     exe_path = Path(exe)
     if exe_path.suffix.lower() == ".exe" and exe_path.exists():
-        sibling_python = exe_path.parent / f"python{_EXE_SUFFIX}"
+        scripts_dir = exe_path.parent
+        sibling_python = scripts_dir / f"python{_EXE_SUFFIX}"
         if sibling_python.exists():
+            # Determine if this is a GUI wrapper by inspecting its PE subsystem.
+            wrapper_pe = inspect_pe(str(exe_path))
+            if wrapper_pe == "GUI":
+                # GUI wrapper → use pythonw.exe for keepalive to match real behaviour
+                sibling_pythonw = scripts_dir / f"pythonw{_EXE_SUFFIX}"
+                if sibling_pythonw.exists():
+                    return [str(sibling_pythonw), "-c", "import time; time.sleep(10)"]
             return [str(sibling_python), "-c", "import time; time.sleep(10)"]
     return None
 
@@ -491,9 +502,11 @@ def run_scenario(
                 effective_subsystem = child_sub
 
                 # If the wrapper is GUI but the child is CUI, a console WILL
-                # appear — override even if direct detection said False, because
-                # the detection may have missed the conhost.exe due to timing.
-                if pe_subsystem == "GUI" and child_sub == "CUI":
+                # appear.  Only set this when we have NO direct observation
+                # (console_window is None) — do not override actual detection
+                # results, as the keepalive / direct detection is authoritative
+                # when it succeeds.
+                if pe_subsystem == "GUI" and child_sub == "CUI" and console_window is None:
                     console_window = True
 
             if effective_subsystem is not None:
