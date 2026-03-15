@@ -399,12 +399,31 @@ jobs:
 
       - name: Copy HTML report to site
         run: |
-          if [ -f "docs/findings/report.html" ]; then
+          if [ -f "artifacts/html/report.html" ]; then
             mkdir -p site/report
-            cp docs/findings/report.html site/report/index.html
+            cp artifacts/html/report.html site/report/index.html
             echo "HTML report copied to site/report/index.html"
           else
-            echo "No HTML report found; skipping copy."
+            echo "No HTML report found at artifacts/html/report.html; skipping copy."
+          fi
+
+      - name: Redirect homepage to interactive report
+        run: |
+          if [ -f "site/report/index.html" ]; then
+            cat > site/index.html << 'REDIRECT'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+          <meta charset="utf-8">
+          <meta http-equiv="refresh" content="0; url=report/">
+          <title>Python Launch Lab</title>
+          </head>
+          <body>
+          <p>Redirecting to the <a href="report/">interactive report</a>...</p>
+          </body>
+          </html>
+          REDIRECT
+            echo "Homepage redirect to report/ created."
           fi
 
       - name: Upload Pages site artifact
