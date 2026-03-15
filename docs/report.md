@@ -8,11 +8,12 @@ The main purpose of this report is to demonstrate that on Windows,
 window**. The report compares multiple `uv` builds side by side and highlights
 any cases where the observed behaviour deviates from expectations.
 
-!!! info "Report not yet generated"
+!!! info "Looking for the interactive report?"
 
-    If you see this page, the interactive report has not been built for this
-    deployment. The report is produced by the `generate-report` job in the
-    Windows CI workflow and replaces this placeholder automatically.
+    If you're seeing this placeholder page, the interactive report was not
+    deployed for this build.  The report is produced by the `generate-report`
+    job in the **Windows CI** workflow and replaces this page automatically
+    on the [deployed site](/report/).
 
     To generate the report locally on Windows:
 

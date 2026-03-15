@@ -849,7 +849,7 @@ def _render_uv_versions_table(results: list[ScenarioResult]) -> str:
     if not version_info:
         return "<p><em>No uv version information available.</em></p>"
 
-    sorted_versions = sorted(version_info.keys(), key=lambda k: k[0])
+    sorted_versions = sorted(version_info.keys(), key=lambda k: (k[0], k[1] or ""))
 
     # Infer source labels: if there is more than one distinct hash for
     # versions that look similar, the first is likely official and
@@ -858,6 +858,9 @@ def _render_uv_versions_table(results: list[ScenarioResult]) -> str:
     for ver, _hash in sorted_versions:
         seen_version_strings[ver] = seen_version_strings.get(ver, 0) + 1
 
+    # Check whether any build carries a '+' custom marker.
+    any_custom_marker = any("+" in ver for ver, _hash in sorted_versions)
+
     def _infer_source(
         ver: str,
         ver_hash: str | None,
@@ -865,14 +868,33 @@ def _render_uv_versions_table(results: list[ScenarioResult]) -> str:
         idx: int,
         has_multiple: bool,
     ) -> str:
-        """Infer whether a build is the official release or a custom fork."""
+        """Infer whether a build is the official release or a custom fork.
+
+        Uses the ``+`` marker in the version string (e.g. ``0.7.12+dev``)
+        as a reliable indicator of a custom build.  When no marker is
+        present and there is only one build, it is labelled as official.
+        Otherwise a neutral "Unclassified" label is used.
+        """
         _OFFICIAL = "Official release (astral-sh/uv)"
         _CUSTOM = "Custom build (joelvaneenwyk/uv fork)"
-        if not has_multiple or ver_hash is None:
+        _UNKNOWN = "Unclassified build"
+        # A '+' suffix (e.g. "0.7.12+dev") is an explicit custom marker.
+        if "+" in ver:
+            return _CUSTOM
+        # When only one build is present, it is almost certainly official.
+        if not has_multiple:
             return _OFFICIAL
+        # If another build carries the '+' marker, this clean version
+        # is the official release.
+        if any_custom_marker:
+            return _OFFICIAL
+        # Multiple builds, same version string with different hashes --
+        # first occurrence is assumed official, others custom.
         if seen_version_strings.get(ver, 1) > 1:
             return _OFFICIAL if occurrence == 1 else _CUSTOM
-        return _OFFICIAL if idx == 0 else _CUSTOM
+        # Multiple builds but different version strings and no explicit
+        # marker -- we cannot reliably determine the source.
+        return _UNKNOWN
 
     parts: list[str] = []
     parts.append('<table class="uv-versions-table">')
@@ -896,7 +918,8 @@ def _render_uv_versions_table(results: list[ScenarioResult]) -> str:
             ver, ver_hash, version_occurrence[ver], idx, has_multiple_builds,
         )
 
-        hash_display = _esc(ver_hash[:12]) if ver_hash and ver_hash.strip() else "N/A"
+        stripped_hash = ver_hash.strip() if ver_hash else ""
+        hash_display = _esc(stripped_hash[:12]) if stripped_hash else "N/A"
 
         parts.append("<tr>")
         parts.append(f"<td><code>{_esc(ver)}</code></td>")
