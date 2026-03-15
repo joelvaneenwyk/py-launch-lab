@@ -192,13 +192,21 @@ jobs:
             "available=false" >> $env:GITHUB_OUTPUT
           }
 
-      # -- On binary missing: set up Rust + cargo registry and build ----------
+      # -- On binary missing: set up Rust + cargo registry + sccache and build -
       - name: Set up Rust toolchain (binary missing)
         if: steps.binary-check.outputs.available != 'true'
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
+          # Disable built-in Swatinem/rust-cache — it caches the workspace
+          # target dir which is not the custom uv build dir.  We use sccache
+          # (below) for compilation caching instead.
+          cache: false
         continue-on-error: true
+
+      - name: Set up sccache (binary missing)
+        if: steps.binary-check.outputs.available != 'true'
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Restore cargo registry cache (binary missing)
         if: steps.binary-check.outputs.available != 'true'
@@ -219,6 +227,9 @@ jobs:
         id: build-custom-uv
         if: steps.binary-check.outputs.available != 'true'
         run: uv run py-launch-lab setup-uv "$env:CUSTOM_UV_SOURCE"
+        env:
+          RUSTC_WRAPPER: sccache
+          SCCACHE_GHA_ENABLED: "true"
         continue-on-error: true
 
       # Copy the freshly-built binaries into the cache dir so the cache action
@@ -386,11 +397,12 @@ jobs:
         run: uv run mkdocs build --strict
         continue-on-error: true
 
-      - name: Copy HTML report to site root
+      - name: Copy HTML report to site
         run: |
           if [ -f "docs/findings/report.html" ]; then
-            cp docs/findings/report.html site/report.html
-            echo "HTML report copied to site/report.html"
+            mkdir -p site/report
+            cp docs/findings/report.html site/report/index.html
+            echo "HTML report copied to site/report/index.html"
           else
             echo "No HTML report found; skipping copy."
           fi
@@ -441,16 +453,26 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
+          cache: false
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Build pyshim-win
         id: build
         working-directory: crates/pyshim-win
         run: cargo build
+        env:
+          RUSTC_WRAPPER: sccache
+          SCCACHE_GHA_ENABLED: "true"
 
       - name: Run Rust tests
         id: test
         working-directory: crates/pyshim-win
         run: cargo test
+        env:
+          RUSTC_WRAPPER: sccache
+          SCCACHE_GHA_ENABLED: "true"
 
       - name: Write job summary
         if: always()
