@@ -388,3 +388,45 @@ def test_uv_versions_table_deterministic_sort():
     pos_aaa = html.index("aaa1111111")
     pos_zzz = html.index("zzz9999999")
     assert pos_aaa < pos_zzz
+
+
+def test_uv_versions_table_no_unclassified():
+    """Multiple builds without '+' markers should never produce 'Unclassified'."""
+    results = [
+        _make_result(scenario_id="s1", exit_code=0, uv_version="0.7.11",
+                     uv_version_hash="aaa1111111"),
+        _make_result(scenario_id="s1", exit_code=0, uv_version="0.7.12",
+                     uv_version_hash="bbb2222222"),
+    ]
+    html = _render_uv_versions_table(results)
+    assert "Unclassified" not in html
+    # First version (lower) is official, second is custom
+    assert "Official release" in html
+    assert "Custom build" in html
+
+
+def test_html_report_issue_diagnosis_section():
+    """The report should contain the Issue Diagnosis section with PR links."""
+    results = [_make_result(exit_code=0)]
+    html = _render(results)
+    assert "Issue Diagnosis" in html
+    assert "joelvaneenwyk/uv/pull/2" in html
+    assert "joelvaneenwyk/uv/pull/3" in html
+    assert "CREATE_NO_WINDOW" in html
+    assert "issue-diagnosis" in html
+
+
+def test_html_report_purpose_external_links():
+    """The Purpose section should include external links to related issues."""
+    results = [_make_result(exit_code=0)]
+    html = _render(results)
+    assert "astral-sh/uv" in html
+    assert "pypa/distlib" in html
+
+
+def test_html_report_list_css():
+    """The report CSS should include styling for ul/li elements."""
+    results = [_make_result(exit_code=0)]
+    html = _render(results)
+    assert "padding-left: 2rem" in html
+    assert "ul, ol" in html
