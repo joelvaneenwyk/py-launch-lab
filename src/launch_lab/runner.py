@@ -27,6 +27,7 @@ from pathlib import Path
 
 from launch_lab.collect import save_result
 from launch_lab.detect_windows import (
+    detect_application_window,
     detect_console_host,
     detect_visible_window,
     get_creation_flags,
@@ -320,7 +321,7 @@ def _build_venv_command(scenario: Scenario) -> list[str]:
         return [str(scripts_dir / f"lab-console{_EXE_SUFFIX}")]
 
     if sid == "venv-gui-entrypoint":
-        return [str(scripts_dir / f"lab-gui{_EXE_SUFFIX}")]
+        return [str(scripts_dir / f"lab-window-gui{_EXE_SUFFIX}")]
 
     if sid == "venv-dual-console-entrypoint":
         return [str(scripts_dir / f"lab-dual-console{_EXE_SUFFIX}")]
@@ -548,7 +549,7 @@ def run_scenario(
 
             if detect_proc.poll() is None:
                 processes = get_process_tree(detect_proc.pid)
-                visible_window = detect_visible_window(detect_proc.pid)
+                visible_window = detect_application_window(detect_proc.pid)
                 console_window = detect_console_host(detect_proc.pid)
                 creation_flags = get_creation_flags(detect_proc.pid)
                 detect_proc.kill()
@@ -561,7 +562,11 @@ def run_scenario(
                 det = _try_keepalive_detection(cmd[0])
                 if det is not None:
                     processes = det.processes
-                    visible_window = det.visible_window
+                    # Keepalive is only meaningful for console detection — the
+                    # keepalive process does NOT run the actual application
+                    # code, so it cannot create application windows (Tk, Qt,
+                    # etc.).  Leave visible_window as None so the inference
+                    # fallback can fill it in from scenario metadata.
                     console_window = det.console_window
                     creation_flags = det.creation_flags
 
@@ -592,11 +597,11 @@ def run_scenario(
                     console_window = effective_subsystem == "CUI"
                 if visible_window is None:
                     if effective_subsystem == "CUI":
-                        # CUI child process — console is typically visible
+                        # CUI child process — no application window
                         visible_window = False
                     else:
                         # True GUI child — check if this scenario creates
-                        # a visible window (GUI entry-points do)
+                        # an application window (GUI entry-points do)
                         _mode_lower = scenario.mode.lower()
                         _sid_lower = scenario.scenario_id.lower()
                         if "gui" in _mode_lower or "gui" in _sid_lower:

@@ -31,7 +31,7 @@ def require_uv():
 def _cleanup_tool_installs():
     """Uninstall fixture packages after all tests in this module."""
     yield
-    for pkg in ("lab-console", "lab-gui"):
+    for pkg in ("lab-console", "lab-window-gui"):
         try:
             subprocess.run(
                 ["uv", "tool", "uninstall", pkg],

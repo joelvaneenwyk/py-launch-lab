@@ -13,7 +13,7 @@ import time
 
 def run() -> None:
     sentinel = pathlib.Path(tempfile.gettempdir()) / "py_launch_lab_gui.txt"
-    sentinel.write_text(f"hello from lab-gui\nsys.executable={sys.executable}\n")
+    sentinel.write_text(f"hello from lab-window-gui\nsys.executable={sys.executable}\n")
 
     try:
         import tkinter as tk  # noqa: PLC0415

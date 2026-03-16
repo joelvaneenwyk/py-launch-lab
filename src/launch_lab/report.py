@@ -106,12 +106,12 @@ def _render_header(results: list[ScenarioResult]) -> list[str]:
         "",
         "| Column | Meaning |",
         "| --- | --- |",
-        "| **Console Allocated** | Did Windows allocate a console window "
+        "| **Console Window** | Did Windows allocate a console window "
         "(conhost) for the process? CUI executables get one by default; GUI "
         "executables do not. |",
-        "| **GUI Window Spawned** | Did the process create a visible top-level "
-        "GUI window? GUI-subsystem wrappers may spawn one; console scripts "
-        "typically do not. |",
+        "| **Application Window** | Did the application spawn its own "
+        "non-console window (e.g. a Tk or Qt window)? GUI-subsystem "
+        "entry-point wrappers may spawn one; console scripts do not. |",
         "",
     ])
 
@@ -124,7 +124,7 @@ def _render_summary_table(results: list[ScenarioResult]) -> list[str]:
         "## All Scenarios",
         "",
         "| Scenario | Platform | uv Version | Launcher | Exit Code | PE Subsystem"
-        " | Console Allocated | GUI Window Spawned |",
+        " | Console Window | Application Window |",
         "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for r in results:

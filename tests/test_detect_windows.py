@@ -11,6 +11,7 @@ from unittest.mock import patch
 import pytest
 
 from launch_lab.detect_windows import (
+    detect_application_window,
     detect_console_host,
     detect_visible_window,
     get_creation_flags,
@@ -116,3 +117,78 @@ class TestDetectVisibleWindowSubtree:
 
         with patch.object(dw, "_IS_WINDOWS", False):
             assert detect_visible_window(1) is None
+
+
+class TestDetectApplicationWindow:
+    """Test that detect_application_window excludes console host windows."""
+
+    def _make_child(self, pid: int, name: str = "child.exe") -> ProcessInfo:
+        return ProcessInfo(pid=pid, name=name, exe=None, cmdline=None)
+
+    def test_excludes_conhost_from_pid_set(self):
+        """Console host PIDs should be excluded from the window enumeration."""
+        conhost = self._make_child(100, "conhost.exe")
+        app_child = self._make_child(101, "python.exe")
+        captured_pids: list[set[int]] = []
+
+        def fake_enum(pids: set[int]) -> bool:
+            captured_pids.append(pids)
+            return False
+
+        import launch_lab.detect_windows as dw
+
+        with (
+            patch.object(dw, "_IS_WINDOWS", True),
+            patch.object(dw, "get_process_tree", return_value=[conhost, app_child]),
+            patch.object(dw, "_enum_windows_for_pids", side_effect=fake_enum),
+        ):
+            result = detect_application_window(42)
+
+        assert result is False
+        # conhost (pid 100) should NOT be in the set
+        assert captured_pids == [{42, 101}]
+
+    def test_returns_true_for_app_window(self):
+        """An application window (non-console) should be detected."""
+        app_child = self._make_child(101, "python.exe")
+
+        def fake_enum(pids: set[int]) -> bool:
+            return True
+
+        import launch_lab.detect_windows as dw
+
+        with (
+            patch.object(dw, "_IS_WINDOWS", True),
+            patch.object(dw, "get_process_tree", return_value=[app_child]),
+            patch.object(dw, "_enum_windows_for_pids", side_effect=fake_enum),
+        ):
+            result = detect_application_window(42)
+
+        assert result is True
+
+    def test_returns_false_when_only_console_host(self):
+        """When the only child is conhost, application window should be False."""
+        conhost = self._make_child(100, "conhost.exe")
+
+        import launch_lab.detect_windows as dw
+
+        with (
+            patch.object(dw, "_IS_WINDOWS", True),
+            patch.object(dw, "get_process_tree", return_value=[conhost]),
+            patch.object(dw, "_enum_windows_for_pids", return_value=False),
+        ):
+            result = detect_application_window(42)
+
+        # Only parent pid (42) remains after excluding conhost
+        assert result is False
+
+    def test_returns_none_on_non_windows(self):
+        """On non-Windows, detect_application_window always returns None."""
+        import launch_lab.detect_windows as dw
+
+        with patch.object(dw, "_IS_WINDOWS", False):
+            assert detect_application_window(1) is None
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="Non-Windows test only")
+    def test_non_windows_returns_none(self):
+        assert detect_application_window(1) is None
