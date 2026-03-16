@@ -101,6 +101,105 @@ tasks:
     vars:
       FORCE: '{{.FORCE | default ""}}'
 
+  # ---------------------------------------------------------------------------
+  # Individual scenario tasks — call e.g. `task venv-gui-entrypoint`
+  # ---------------------------------------------------------------------------
+
+  _scenario:
+    internal: true
+    deps: [setup-custom-uv]
+    cmds:
+      - uv run py-launch-lab scenario run "{{.SCENARIO}}" {{if .CUSTOM_UV}}--custom-uv {{.CUSTOM_UV}}{{end}}
+
+  # --- Direct python / pythonw ---
+  python-script-py:
+    desc: "Scenario: python.exe running .py"
+    cmds: [{ task: _scenario, vars: { SCENARIO: python-script-py } }]
+
+  python-script-pyw:
+    desc: "Scenario: python.exe running .pyw"
+    cmds: [{ task: _scenario, vars: { SCENARIO: python-script-pyw } }]
+
+  pythonw-script-py:
+    desc: "Scenario: pythonw.exe running .py"
+    cmds: [{ task: _scenario, vars: { SCENARIO: pythonw-script-py } }]
+
+  pythonw-script-pyw:
+    desc: "Scenario: pythonw.exe running .pyw"
+    cmds: [{ task: _scenario, vars: { SCENARIO: pythonw-script-pyw } }]
+
+  # --- uv run ---
+  uv-run-script-py:
+    desc: "Scenario: uv run hello.py"
+    cmds: [{ task: _scenario, vars: { SCENARIO: uv-run-script-py } }]
+
+  uv-run-script-pyw:
+    desc: "Scenario: uv run hello.pyw"
+    cmds: [{ task: _scenario, vars: { SCENARIO: uv-run-script-pyw } }]
+
+  uv-run-gui-script:
+    desc: "Scenario: uv run --gui-script"
+    cmds: [{ task: _scenario, vars: { SCENARIO: uv-run-gui-script } }]
+
+  # --- uv tool ---
+  uv-tool-install-console:
+    desc: "Scenario: uv tool install (console pkg)"
+    cmds: [{ task: _scenario, vars: { SCENARIO: uv-tool-install-console } }]
+
+  uv-tool-install-gui:
+    desc: "Scenario: uv tool install (GUI pkg)"
+    cmds: [{ task: _scenario, vars: { SCENARIO: uv-tool-install-gui } }]
+
+  uv-tool-run-pkg-console:
+    desc: "Scenario: uv tool run console entrypoint"
+    cmds: [{ task: _scenario, vars: { SCENARIO: uv-tool-run-pkg-console } }]
+
+  # --- uvw ---
+  uvw-run-script-py:
+    desc: "Scenario: uvw run hello.py (GUI subsystem)"
+    cmds: [{ task: _scenario, vars: { SCENARIO: uvw-run-script-py } }]
+
+  # --- uvx ---
+  uvx-pkg-console:
+    desc: "Scenario: uvx --from pkg_console"
+    cmds: [{ task: _scenario, vars: { SCENARIO: uvx-pkg-console } }]
+
+  # --- venv-direct ---
+  venv-console-entrypoint:
+    desc: "Scenario: venv console entry-point wrapper"
+    cmds: [{ task: _scenario, vars: { SCENARIO: venv-console-entrypoint } }]
+
+  venv-gui-entrypoint:
+    desc: "Scenario: venv GUI entry-point wrapper"
+    cmds: [{ task: _scenario, vars: { SCENARIO: venv-gui-entrypoint } }]
+
+  venv-dual-console-entrypoint:
+    desc: "Scenario: dual-mode console entry-point"
+    cmds: [{ task: _scenario, vars: { SCENARIO: venv-dual-console-entrypoint } }]
+
+  venv-dual-gui-entrypoint:
+    desc: "Scenario: dual-mode GUI entry-point"
+    cmds: [{ task: _scenario, vars: { SCENARIO: venv-dual-gui-entrypoint } }]
+
+  venv-python-script-py:
+    desc: "Scenario: venv python.exe running .py"
+    cmds: [{ task: _scenario, vars: { SCENARIO: venv-python-script-py } }]
+
+  venv-pythonw-script-py:
+    desc: "Scenario: venv pythonw.exe running .py"
+    cmds: [{ task: _scenario, vars: { SCENARIO: venv-pythonw-script-py } }]
+
+  # --- shim ---
+  shim-python-script-py:
+    desc: "Scenario: pyshim-win wrapping python.exe"
+    cmds: [{ task: _scenario, vars: { SCENARIO: shim-python-script-py } }]
+
+  shim-uv-run-script-py:
+    desc: "Scenario: pyshim-win wrapping uv run"
+    cmds: [{ task: _scenario, vars: { SCENARIO: shim-uv-run-script-py } }]
+
+  # ---------------------------------------------------------------------------
+
   shim-build:
     desc: Build the Rust shim (Windows only)
     dir: crates/pyshim-win
