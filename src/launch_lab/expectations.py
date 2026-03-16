@@ -32,7 +32,7 @@ class ExpectedBehaviour:
 
     pe_subsystem: Subsystem | None = None
     console_window: bool | None = None
-    visible_window: bool | None = None
+    application_window: bool | None = None
     stdout_available: bool | None = None
     exit_code: int = 0
     explanation: str = ""
@@ -224,7 +224,7 @@ EXPECTATIONS: dict[str, ExpectedBehaviour] = {
     "venv-gui-entrypoint": ExpectedBehaviour(
         pe_subsystem=Subsystem.GUI,
         console_window=False,
-        visible_window=True,
+        application_window=True,
         stdout_available=False,
         exit_code=0,
         explanation=(
@@ -246,7 +246,7 @@ EXPECTATIONS: dict[str, ExpectedBehaviour] = {
     "venv-dual-gui-entrypoint": ExpectedBehaviour(
         pe_subsystem=Subsystem.GUI,
         console_window=False,
-        visible_window=False,
+        application_window=False,
         stdout_available=False,
         exit_code=0,
         explanation=(
@@ -451,14 +451,14 @@ def check_expectations(result: ScenarioResult) -> list[Anomaly]:
         )
 
     if (
-        expected.visible_window is not None
+        expected.application_window is not None
         and result.visible_window_detected is not None
-        and result.visible_window_detected != expected.visible_window
+        and result.visible_window_detected != expected.application_window
     ):
         anomalies.append(
             Anomaly(
-                field="Visible Window",
-                expected="Yes" if expected.visible_window else "No",
+                field="Application Window",
+                expected="Yes" if expected.application_window else "No",
                 actual="Yes" if result.visible_window_detected else "No",
                 explanation=expected.explanation,
                 doc_url=expected.doc_url,

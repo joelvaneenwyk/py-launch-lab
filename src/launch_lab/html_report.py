@@ -800,7 +800,7 @@ def _collect_unique_values(
     subsystems: set[str] = set()
     statuses: set[str] = set()
     console_vals: set[str] = set()
-    gui_window_vals: set[str] = set()
+    app_window_vals: set[str] = set()
 
     for r in results:
         launchers.add(str(r.launcher))
@@ -810,7 +810,7 @@ def _collect_unique_values(
         anomalies = anomaly_map.get(_result_key(r), [])
         statuses.add("\u2713 OK" if not anomalies else "\u26a0 Anomaly")
         console_vals.add(_bool_display(r.console_window_detected))
-        gui_window_vals.add(_bool_display(r.visible_window_detected))
+        app_window_vals.add(_bool_display(r.visible_window_detected))
 
     return {
         "launcher": sorted(launchers),
@@ -819,7 +819,7 @@ def _collect_unique_values(
         "subsystem": sorted(subsystems),
         "status": sorted(statuses),
         "console": sorted(console_vals),
-        "gui_window": sorted(gui_window_vals),
+        "app_window": sorted(app_window_vals),
     }
 
 
@@ -1024,14 +1024,15 @@ def _render_html_report(
     )
     parts.append("<ul>")
     parts.append(
-        "<li><strong>Console Allocated</strong> &mdash; Did Windows allocate a console "
+        "<li><strong>Console Window</strong> &mdash; Did Windows allocate a console "
         "host (<code>conhost.exe</code>) for the process? Console (CUI) executables "
         "do this by default; GUI executables <em>should not</em>.</li>"
     )
     parts.append(
-        "<li><strong>GUI Window Spawned</strong> &mdash; Did the process create a "
-        "visible top-level window? GUI entry-point scripts and GUI-subsystem "
-        "launchers may do this; console scripts should not.</li>"
+        "<li><strong>Application Window</strong> &mdash; Did the application spawn "
+        "its own non-console window (e.g. a Tk or Qt window)? Only &ldquo;Yes&rdquo; "
+        "when the process itself created a visible application window; "
+        "console windows do not count.</li>"
     )
     parts.append(
         "<li><strong>PE Subsystem</strong> &mdash; Is the executable marked as "
@@ -1119,15 +1120,15 @@ def _render_html_report(
             "Windows PE subsystem of the resolved executable: CUI (console) or GUI (graphical)",
         ),
         (
-            "Console Allocated",
-            "Whether Windows allocated a console window (conhost.exe) for the process. "
+            "Console Window",
+            "Whether a console window was allocated for the process. "
             "CUI executables get a console by default; GUI executables do not.",
         ),
         (
-            "GUI Window Spawned",
-            "Whether the process created a visible top-level GUI window. "
-            "GUI-subsystem entry-point wrappers may spawn a window; "
-            "console scripts typically do not.",
+            "Application Window",
+            "Whether the application spawned its own non-console window "
+            "(e.g. a Tk or Qt window). Only Yes when the process itself created "
+            "a visible application window; console windows do not count.",
         ),
         ("stdout", "Whether the process produced output on its standard output stream"),
         ("stderr", "Whether the process produced output on its standard error stream"),
@@ -1152,7 +1153,7 @@ def _render_html_report(
     parts.append('<th><input type="text" placeholder="Filter\u2026"></th>')
     parts.append(f"<th>{_render_filter_select(unique_vals['subsystem'])}</th>")
     parts.append(f"<th>{_render_filter_select(unique_vals['console'])}</th>")
-    parts.append(f"<th>{_render_filter_select(unique_vals['gui_window'])}</th>")
+    parts.append(f"<th>{_render_filter_select(unique_vals['app_window'])}</th>")
     parts.append(f"<th>{_render_filter_select(['Yes', 'No', 'N/A'])}</th>")
     parts.append(f"<th>{_render_filter_select(['Yes', 'No', 'N/A'])}</th>")
     parts.append("</tr>")

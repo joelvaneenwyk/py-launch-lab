@@ -105,10 +105,14 @@ class ScenarioResult(BaseModel):
         None, description="Whether the process had a readable stderr stream."
     )
     visible_window_detected: bool | None = Field(
-        None, description="Whether a visible top-level window was detected."
+        None,
+        description=(
+            "Whether the application spawned its own non-console window "
+            "(e.g. Tk, Qt)."
+        ),
     )
     console_window_detected: bool | None = Field(
-        None, description="Whether a console window (conhost/WT) was detected."
+        None, description="Whether a console window was allocated for the process."
     )
 
     # Process tree

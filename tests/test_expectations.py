@@ -198,7 +198,7 @@ class TestKnownDeviations:
         valid_fields = {
             "pe_subsystem",
             "console_window",
-            "visible_window",
+            "application_window",
             "stdout_available",
             "exit_code",
         }
@@ -206,7 +206,7 @@ class TestKnownDeviations:
         display_to_attr = {
             "pe_subsystem": "pe_subsystem",
             "console_window": "console_window",
-            "visible_window": "visible_window",
+            "application_window": "application_window",
             "stdout_available": "stdout_available",
             "exit_code": "exit_code",
         }

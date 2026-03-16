@@ -166,23 +166,23 @@ Also added PE-subsystem inference as a final fallback for any remaining
 
 ### Result
 
-All 20 scenarios now have populated Console Window and Visible Window values.
+All 20 scenarios now have populated Console Window and Application Window values.
 
 ---
 
-## Phase 3: The lab-gui.exe Console Detection Bug
+## Phase 3: The lab-window-gui.exe Console Detection Bug
 
 ### The Problem
 
 After fixing N/A values, the report showed `venv-gui-entrypoint`
-(`.cache/matrix_venv/Scripts/lab-gui.exe`) with `Console Window = No`.
+(`.cache/matrix_venv/Scripts/lab-window-gui.exe`) with `Console Window = No`.
 
-The user knew this was wrong — **launching `lab-gui.exe` absolutely opens
+The user knew this was wrong — **launching `lab-window-gui.exe` absolutely opens
 a terminal window** (visible as a brief flash on the desktop).
 
 ### Investigation
 
-`lab-gui.exe` is a pip/uv-generated GUI entry-point wrapper:
+`lab-window-gui.exe` is a pip/uv-generated GUI entry-point wrapper:
 - **Wrapper PE subsystem:** GUI ← this is correct
 - **Expected behaviour:** No console window ← this is the ideal behaviour
 
@@ -209,7 +209,7 @@ with a fix in progress at [joelvaneenwyk/uv#2](https://github.com/joelvaneenwyk/
 #### Why Direct Detection Missed It
 
 1. `detect_console_host(lab_gui_pid)` returned `False` because `conhost.exe`
-   is a child of `pythonw.exe`, not `lab-gui.exe`.  The process tree
+   is a child of `pythonw.exe`, not `lab-window-gui.exe`.  The process tree
    query only returns direct children.
 
 2. Inference from PE subsystem said "GUI → no console" because the
@@ -218,7 +218,7 @@ with a fix in progress at [joelvaneenwyk/uv#2](https://github.com/joelvaneenwyk/
 
 3. Keepalive detection used the sibling `python.exe` (CUI), which
    correctly showed a console.  But this was for the sibling, not for
-   what `lab-gui.exe` actually does.
+   what `lab-window-gui.exe` actually does.
 
 ### The Fix
 

@@ -605,7 +605,7 @@ class TestVenvGuiEntrypoint:
     @pytest.mark.skipif(not _IS_WINDOWS, reason="GUI entrypoints produce .exe only on Windows")
     def test_gui_entrypoint_exists(self, venv_with_packages: Path) -> None:
         """The GUI entrypoint wrapper should be created by pip install."""
-        wrapper = venv_with_packages / _SCRIPTS_DIR / "lab-gui.exe"
+        wrapper = venv_with_packages / _SCRIPTS_DIR / "lab-window-gui.exe"
         assert wrapper.is_file(), f"GUI entrypoint not found: {wrapper}"
 
     @pytest.mark.skipif(not _IS_WINDOWS, reason="GUI entrypoint .exe only on Windows")
@@ -616,7 +616,7 @@ class TestVenvGuiEntrypoint:
         entries.  This ensures that the script does **not** flash a console
         window, which is the correct behaviour for graphical applications.
         """
-        wrapper = venv_with_packages / _SCRIPTS_DIR / "lab-gui.exe"
+        wrapper = venv_with_packages / _SCRIPTS_DIR / "lab-window-gui.exe"
         subsystem = inspect_pe(wrapper)
         assert subsystem == "GUI", (
             f"Expected GUI entrypoint to be GUI, got {subsystem}. "
@@ -626,7 +626,7 @@ class TestVenvGuiEntrypoint:
     @pytest.mark.skipif(not _IS_WINDOWS, reason="GUI entrypoint .exe only on Windows")
     def test_gui_entrypoint_runs(self, venv_with_packages: Path) -> None:
         """The GUI entrypoint should execute and exit cleanly."""
-        wrapper = venv_with_packages / _SCRIPTS_DIR / "lab-gui.exe"
+        wrapper = venv_with_packages / _SCRIPTS_DIR / "lab-window-gui.exe"
         scenario = _make_venv_scenario(
             "venv-gui-entrypoint",
             str(wrapper),
@@ -648,7 +648,7 @@ class TestVenvGuiEntrypoint:
         trampoline for pythonw.exe, a console window will flash — this is
         a known deviation documented in ``KNOWN_DEVIATIONS``.
         """
-        wrapper = venv_with_packages / _SCRIPTS_DIR / "lab-gui.exe"
+        wrapper = venv_with_packages / _SCRIPTS_DIR / "lab-window-gui.exe"
         scenario = _make_venv_scenario(
             "venv-gui-ep-no-console",
             str(wrapper),
@@ -673,10 +673,10 @@ class TestVenvGuiEntrypoint:
     @pytest.mark.skipif(not _IS_WINDOWS, reason="PE inspection only meaningful on Windows")
     def test_gui_entrypoint_file_info(self, venv_with_packages: Path) -> None:
         """Document the GUI entrypoint wrapper size and PE details."""
-        wrapper = venv_with_packages / _SCRIPTS_DIR / "lab-gui.exe"
+        wrapper = venv_with_packages / _SCRIPTS_DIR / "lab-window-gui.exe"
         size = wrapper.stat().st_size
         pe = inspect_pe(wrapper)
-        print(f"\n  lab-gui wrapper: {wrapper} ({size:,} bytes, PE={pe})")
+        print(f"\n  lab-window-gui wrapper: {wrapper} ({size:,} bytes, PE={pe})")
         assert size > 0
 
     def test_gui_entrypoint_non_windows(self, venv_with_packages: Path) -> None:
@@ -685,7 +685,7 @@ class TestVenvGuiEntrypoint:
             pytest.skip("Only meaningful on non-Windows")
         # On Linux/macOS pip installs gui-scripts as plain scripts (no .exe),
         # functionally equivalent to console scripts.
-        wrapper = venv_with_packages / _SCRIPTS_DIR / "lab-gui"
+        wrapper = venv_with_packages / _SCRIPTS_DIR / "lab-window-gui"
         assert wrapper.is_file(), (
             f"GUI entrypoint script not found: {wrapper}. "
             "On non-Windows pip should still create a script for gui-scripts."

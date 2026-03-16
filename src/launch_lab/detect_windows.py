@@ -227,6 +227,39 @@ def _enum_windows_for_pids(pids: set[int]) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Application-window detection (excludes console host windows)
+# ---------------------------------------------------------------------------
+
+
+def detect_application_window(pid: int) -> bool | None:
+    """Return True if a non-console application window is associated with *pid*.
+
+    Unlike :func:`detect_visible_window`, this function **excludes** windows
+    owned by console host processes (``conhost.exe``, ``WindowsTerminal.exe``,
+    ``OpenConsole.exe``).  It only returns True when the application itself
+    (or a non-console child) has created a visible top-level window — e.g. a
+    Tk or Qt window.
+
+    Returns None on non-Windows platforms.
+    """
+    if not _IS_WINDOWS:
+        return None
+
+    try:
+        children = get_process_tree(pid)
+        # Exclude console-host processes from the pid set — their windows
+        # are console windows, not application windows.
+        console_pids = {c.pid for c in children if c.name.lower() in _CONSOLE_HOST_NAMES}
+        app_pids = ({pid} | {c.pid for c in children}) - console_pids
+        if not app_pids:
+            return False
+        return _enum_windows_for_pids(app_pids)
+    except Exception:  # noqa: BLE001
+        _log.debug("application window detection failed for pid %d", pid, exc_info=True)
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Console-host detection
 # ---------------------------------------------------------------------------
 

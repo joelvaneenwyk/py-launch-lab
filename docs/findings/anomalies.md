@@ -35,7 +35,7 @@ created as a CUI (console) binary instead of a GUI binary.
 
 ### Expected vs Actual
 
-| venv Tool | pythonw.exe PE Subsystem | Console Allocated? |
+| venv Tool | pythonw.exe PE Subsystem | Console Window? |
 |-----------|------------------------|--------------------|
 | `python -m venv` | GUI | No |
 | `uv venv` | **CUI** (trampoline) | **Yes** |
@@ -49,7 +49,7 @@ This single bug causes cascading issues:
    that immediately closes — visible as a "terminal flash" on the desktop.
 
 2. **GUI entry-point wrappers also flash a terminal.**
-   pip/uv-generated GUI wrappers (e.g. `lab-gui.exe`) invoke `pythonw.exe`
+   pip/uv-generated GUI wrappers (e.g. `lab-window-gui.exe`) invoke `pythonw.exe`
    internally.  Because the child `pythonw.exe` is CUI, Windows allocates
    a console for the child process even though the wrapper itself is GUI.
 
@@ -187,8 +187,8 @@ and `uv.exe` being CUI binaries, the shim prevents console allocation.
    was necessary.
 
 2. **`conhost.exe` detection misses GUI wrapper children.**
-   When `lab-gui.exe` (GUI wrapper) launches `pythonw.exe` (CUI in uv venvs),
-   `conhost.exe` appears as a child of `pythonw.exe`, not `lab-gui.exe`.
+   When `lab-window-gui.exe` (GUI wrapper) launches `pythonw.exe` (CUI in uv venvs),
+   `conhost.exe` appears as a child of `pythonw.exe`, not `lab-window-gui.exe`.
    Since `get_process_tree()` only captures direct children,
    `detect_console_host()` returns False.  The child PE override was
    needed to compensate.

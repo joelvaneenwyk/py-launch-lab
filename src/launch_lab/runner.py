@@ -27,6 +27,7 @@ from pathlib import Path
 
 from launch_lab.collect import save_result
 from launch_lab.detect_windows import (
+    detect_application_window,
     detect_console_host,
     detect_visible_window,
     get_creation_flags,
@@ -320,7 +321,7 @@ def _build_venv_command(scenario: Scenario) -> list[str]:
         return [str(scripts_dir / f"lab-console{_EXE_SUFFIX}")]
 
     if sid == "venv-gui-entrypoint":
-        return [str(scripts_dir / f"lab-gui{_EXE_SUFFIX}")]
+        return [str(scripts_dir / f"lab-window-gui{_EXE_SUFFIX}")]
 
     if sid == "venv-dual-console-entrypoint":
         return [str(scripts_dir / f"lab-dual-console{_EXE_SUFFIX}")]
@@ -360,7 +361,7 @@ class _DetectionResult:
     """Window/console detection observations from Phase 1."""
 
     processes: list
-    visible_window: bool | None = None
+    app_window: bool | None = None
     console_window: bool | None = None
     creation_flags: int | None = None
 
@@ -468,7 +469,7 @@ def _try_keepalive_detection(exe: str) -> _DetectionResult | None:
         if ka_proc.poll() is None:
             result = _DetectionResult(
                 processes=get_process_tree(ka_proc.pid),
-                visible_window=detect_visible_window(ka_proc.pid),
+                app_window=detect_visible_window(ka_proc.pid),
                 console_window=detect_console_host(ka_proc.pid),
                 creation_flags=get_creation_flags(ka_proc.pid),
             )
@@ -518,7 +519,7 @@ def run_scenario(
     stderr_text: str | None = None
     stdout_available: bool | None = None
     stderr_available: bool | None = None
-    visible_window: bool | None = None
+    app_window: bool | None = None
     console_window: bool | None = None
     creation_flags: int | None = None
     processes = []
@@ -528,8 +529,8 @@ def run_scenario(
         # Phase 1 — Window / console detection (Windows only)
         # Launch with CREATE_NEW_CONSOLE and *no pipes* so Windows
         # allocates a real console.  Pipes suppress console allocation,
-        # which would otherwise cause detect_visible_window / console_host
-        # to always return False for CUI executables.
+        # which would otherwise cause detect_application_window /
+        # console_host to always return False for CUI executables.
         # ----------------------------------------------------------------
         if _IS_WINDOWS:
             detect_proc = subprocess.Popen(
@@ -548,7 +549,7 @@ def run_scenario(
 
             if detect_proc.poll() is None:
                 processes = get_process_tree(detect_proc.pid)
-                visible_window = detect_visible_window(detect_proc.pid)
+                app_window = detect_application_window(detect_proc.pid)
                 console_window = detect_console_host(detect_proc.pid)
                 creation_flags = get_creation_flags(detect_proc.pid)
                 detect_proc.kill()
@@ -561,7 +562,11 @@ def run_scenario(
                 det = _try_keepalive_detection(cmd[0])
                 if det is not None:
                     processes = det.processes
-                    visible_window = det.visible_window
+                    # Keepalive is only meaningful for console detection — the
+                    # keepalive process does NOT run the actual application
+                    # code, so it cannot create application windows (Tk, Qt,
+                    # etc.).  Leave app_window as None so the inference
+                    # fallback can fill it in from scenario metadata.
                     console_window = det.console_window
                     creation_flags = det.creation_flags
 
@@ -590,19 +595,19 @@ def run_scenario(
             if effective_subsystem is not None:
                 if console_window is None:
                     console_window = effective_subsystem == "CUI"
-                if visible_window is None:
+                if app_window is None:
                     if effective_subsystem == "CUI":
-                        # CUI child process — console is typically visible
-                        visible_window = False
+                        # CUI child process — no application window
+                        app_window = False
                     else:
                         # True GUI child — check if this scenario creates
-                        # a visible window (GUI entry-points do)
+                        # an application window (GUI entry-points do)
                         _mode_lower = scenario.mode.lower()
                         _sid_lower = scenario.scenario_id.lower()
                         if "gui" in _mode_lower or "gui" in _sid_lower:
-                            visible_window = True
+                            app_window = True
                         else:
-                            visible_window = False
+                            app_window = False
 
         # ----------------------------------------------------------------
         # Phase 2 — Output capture (always)
@@ -660,7 +665,7 @@ def run_scenario(
         creation_flags=creation_flags,
         stdout_available=stdout_available,
         stderr_available=stderr_available,
-        visible_window_detected=visible_window,
+        visible_window_detected=app_window,
         console_window_detected=console_window,
         processes=processes,
         command_line=cmd,
