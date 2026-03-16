@@ -166,7 +166,7 @@ Also added PE-subsystem inference as a final fallback for any remaining
 
 ### Result
 
-All 20 scenarios now have populated Console Window and Visible Window values.
+All 20 scenarios now have populated Console Window and Application Window values.
 
 ---
 

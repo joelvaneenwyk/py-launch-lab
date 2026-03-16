@@ -1127,7 +1127,7 @@ def _render_html_report(
         (
             "Application Window",
             "Whether the application spawned its own non-console window "
-            "(e.g. a Tk or Qt window). Only YES when the process itself created "
+            "(e.g. a Tk or Qt window). Only Yes when the process itself created "
             "a visible application window; console windows do not count.",
         ),
         ("stdout", "Whether the process produced output on its standard output stream"),
