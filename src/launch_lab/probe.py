@@ -2,8 +2,9 @@
 Probe an arbitrary executable to determine its terminal/console behaviour.
 
 Runs a battery of diagnostic tests and reports whether the executable
-allocates a console window, creates visible windows, etc.  This is useful
-for verifying that detection logic works correctly for any given binary.
+allocates a Console Window, creates an Application Window, etc.  This is
+useful for verifying that detection logic works correctly for any given
+binary.
 """
 
 from __future__ import annotations
@@ -84,7 +85,7 @@ def _detect_windows_for_cmd(
 ) -> None:
     """Phase 1 — Window/console detection on Windows.
 
-    Launches *cmd* with ``CREATE_NEW_CONSOLE`` and probes for visible windows
+    Launches *cmd* with ``CREATE_NEW_CONSOLE`` and probes for application windows
     and console-host processes.  If the process exits before detection can run
     (common for fast commands like ``python --version``), a *keepalive* fallback
     is launched so we can still observe the console/window behaviour — which
@@ -148,7 +149,7 @@ def _run_single_test(
     On Windows a *window-detection pass* is always performed first: the command
     is launched with ``CREATE_NEW_CONSOLE`` and without pipes so that Windows
     allocates a real console (exactly like Win+R).  When pipes are attached,
-    Windows suppresses new console allocation, so ``detect_visible_window``
+    Windows suppresses new console allocation, so application-window detection
     would always return ``False`` — this pass avoids that.
 
     When *capture_output* is ``True`` a second *piped pass* is then run to
@@ -162,7 +163,7 @@ def _run_single_test(
         # Phase 1 — Window detection (Windows only, always)
         # Launch with CREATE_NEW_CONSOLE so Windows allocates a real console.
         # Without this, redirected pipes suppress console allocation and
-        # visible_window would always report False for CUI executables.
+        # application-window detection would always report False for CUI executables.
         # --------------------------------------------------------------------
         if _IS_WINDOWS:
             _detect_windows_for_cmd(cmd, result)
@@ -226,6 +227,7 @@ def probe_executable(
     Returns the :class:`ProbeReport` for programmatic use.
     """
     path_obj = Path(exe_path)
+    resolved: str | None
     if path_obj.exists():
         resolved = str(path_obj.resolve())
     else:
@@ -357,8 +359,8 @@ def _print_test(test: ProbeTest, console: Console) -> None:
     table.add_column("Value")
 
     table.add_row("Exit code", str(test.exit_code))
-    table.add_row("Console window", _bool_indicator(test.console_window))
-    table.add_row("Visible window", _bool_indicator(test.visible_window))
+    table.add_row("Console Window", _bool_indicator(test.console_window))
+    table.add_row("Application Window", _bool_indicator(test.visible_window))
     table.add_row(
         "Process tree",
         ", ".join(p.exe or p.name for p in test.processes)
@@ -408,7 +410,7 @@ def _print_summary(report: ProbeReport, console: Console) -> None:
         reason_parts.append("console host (conhost.exe / Windows Terminal) detected")
 
     if any_visible:
-        reason_parts.append("visible window detected")
+        reason_parts.append("application window detected")
 
     if report.pe_subsystem == Subsystem.GUI and not any_console:
         reason_parts.append("PE subsystem is GUI — no console allocated")
