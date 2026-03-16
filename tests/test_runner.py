@@ -16,6 +16,7 @@ from launch_lab.models import LauncherKind, ScenarioResult
 from launch_lab.runner import (
     _MTIME_SENTINEL,
     _build_command,
+    _observe_window_signals,
     _parse_launcher,
     _read_stored_mtime,
     _uv_binary_mtime,
@@ -195,3 +196,28 @@ class TestVenvMtimeHelpers:
         # If the FS has sub-second precision the mtimes will differ.
         if mtime_v2 != mtime_v1:
             assert mtime_v2 != stored  # would trigger venv rebuild
+
+
+class TestWindowSignalSampling:
+    """Tests for window-signal sampling helper logic."""
+
+    def test_transient_application_window_is_sticky_true(self, monkeypatch):
+        """A short-lived True observation should remain True in the final result."""
+        app_values = iter([False, True, False])
+        console_values = iter([False, False, False])
+
+        monkeypatch.setattr("launch_lab.runner.get_process_tree", lambda _pid: [])
+        monkeypatch.setattr(
+            "launch_lab.runner.detect_application_window",
+            lambda _pid: next(app_values, False),
+        )
+        monkeypatch.setattr(
+            "launch_lab.runner.detect_console_host",
+            lambda _pid: next(console_values, False),
+        )
+        monkeypatch.setattr("launch_lab.runner.time.sleep", lambda _seconds: None)
+
+        detected = _observe_window_signals(12345, rounds=3, interval=0.0)
+
+        assert detected.app_window is True
+        assert detected.console_window is False

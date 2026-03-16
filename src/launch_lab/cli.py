@@ -290,10 +290,11 @@ def scenario_run(
     console.print(f"  pe_subsystem       = {result.pe_subsystem}")
     console.print(f"  stdout_available   = {result.stdout_available}")
     console.print(f"  stderr_available   = {result.stderr_available}")
-    console.print(f"  console_window     = {result.console_window_detected}")
-    console.print(f"  visible_window     = {result.visible_window_detected}")
+    console.print(f"  Console Window     = {result.console_window_detected}")
+    console.print(f"  Application Window = {result.visible_window_detected}")
     console.print(f"  processes          = {len(result.processes)}")
     from launch_lab.collect import artifact_filename
+
     console.print(f"[green]Artifact saved -> {output}/{artifact_filename(result)}[/green]")
 
 

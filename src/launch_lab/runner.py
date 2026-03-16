@@ -29,13 +29,12 @@ from launch_lab.collect import save_result
 from launch_lab.detect_windows import (
     detect_application_window,
     detect_console_host,
-    detect_visible_window,
     get_creation_flags,
     get_process_tree,
 )
 from launch_lab.inspect_pe import inspect_pe
 from launch_lab.matrix import Scenario
-from launch_lab.models import LauncherKind, ScenarioResult
+from launch_lab.models import LauncherKind, ScenarioResult, Subsystem
 from launch_lab.uv_provider import get_uv_binary, is_custom_uv_configured
 
 logger = logging.getLogger(__name__)
@@ -200,9 +199,7 @@ def _ensure_matrix_venv() -> Path:
         _current_uv_mtime = _uv_binary_mtime(uv_bin)
         stored_mtime = _read_stored_mtime(venv_dir) if venv_dir.exists() else None
         binary_changed = (
-            _current_uv_mtime is None
-            or stored_mtime is None
-            or _current_uv_mtime != stored_mtime
+            _current_uv_mtime is None or stored_mtime is None or _current_uv_mtime != stored_mtime
         )
         if not venv_dir.exists():
             need_create = True
@@ -210,7 +207,9 @@ def _ensure_matrix_venv() -> Path:
             if stored_mtime is None:
                 reason = "no mtime sentinel found (first custom run)"
             else:
-                reason = f"binary was rebuilt (mtime {stored_mtime:.1f} -> {_current_uv_mtime or 0:.1f})"
+                reason = (
+                    f"binary was rebuilt (mtime {stored_mtime:.1f} -> {_current_uv_mtime or 0:.1f})"
+                )
             logger.info(
                 "Custom uv is active and %s -- removing existing venv to "
                 "force re-creation of entrypoint wrappers: %s",
@@ -366,6 +365,53 @@ class _DetectionResult:
     creation_flags: int | None = None
 
 
+def _observe_window_signals(
+    root_pid: int,
+    *,
+    rounds: int = 12,
+    interval: float = 0.05,
+) -> _DetectionResult:
+    """Observe window/console signals for *root_pid* over a short sampling window.
+
+    Sampling repeatedly (rather than taking one late snapshot) makes detection
+    resilient to short-lived GUI windows that can appear and disappear in a few
+    hundred milliseconds.
+    """
+    observed_processes = []
+    app_last: bool | None = None
+    console_last: bool | None = None
+    app_seen_true = False
+    console_seen_true = False
+    creation_flags: int | None = None
+
+    for idx in range(max(1, rounds)):
+        tree = get_process_tree(root_pid)
+        if tree:
+            observed_processes = tree
+
+        app_observed = detect_application_window(root_pid)
+        if app_observed is True:
+            app_seen_true = True
+        if app_observed is not None:
+            app_last = app_observed
+
+        console_observed = detect_console_host(root_pid)
+        if console_observed is True:
+            console_seen_true = True
+        if console_observed is not None:
+            console_last = console_observed
+
+        if idx < rounds - 1:
+            time.sleep(interval)
+
+    return _DetectionResult(
+        processes=observed_processes,
+        app_window=True if app_seen_true else app_last,
+        console_window=True if console_seen_true else console_last,
+        creation_flags=creation_flags,
+    )
+
+
 def _build_keepalive_cmd(exe: str) -> list[str] | None:
     """Build a keepalive command for the given executable.
 
@@ -393,7 +439,7 @@ def _build_keepalive_cmd(exe: str) -> list[str] | None:
         if sibling_python.exists():
             # Determine if this is a GUI wrapper by inspecting its PE subsystem.
             wrapper_pe = inspect_pe(str(exe_path))
-            if wrapper_pe == "GUI":
+            if wrapper_pe == Subsystem.GUI:
                 # GUI wrapper → use pythonw.exe for keepalive to match real behaviour
                 sibling_pythonw = scripts_dir / f"pythonw{_EXE_SUFFIX}"
                 if sibling_pythonw.exists():
@@ -402,7 +448,7 @@ def _build_keepalive_cmd(exe: str) -> list[str] | None:
     return None
 
 
-def _detect_child_python_subsystem(exe: str) -> str | None:
+def _detect_child_python_subsystem(exe: str) -> Subsystem | None:
     """For venv entrypoint wrappers, detect the PE subsystem of the child Python.
 
     Venv entrypoint wrappers (pip/uv generated .exe) internally launch the
@@ -431,7 +477,7 @@ def _detect_child_python_subsystem(exe: str) -> str | None:
     # But in uv venvs, pythonw.exe is often a CUI copy (bug), so we need to
     # check the ACTUAL binary.
     wrapper_pe = inspect_pe(str(exe_path))
-    if wrapper_pe == "GUI":
+    if wrapper_pe == Subsystem.GUI:
         # GUI wrapper → will invoke pythonw.exe
         pythonw = scripts_dir / f"pythonw{_EXE_SUFFIX}"
         if pythonw.exists():
@@ -464,15 +510,9 @@ def _try_keepalive_detection(exe: str) -> _DetectionResult | None:
     except (FileNotFoundError, OSError):
         return None
 
-    time.sleep(0.8)  # Give extra time for process tree to stabilise
     try:
         if ka_proc.poll() is None:
-            result = _DetectionResult(
-                processes=get_process_tree(ka_proc.pid),
-                app_window=detect_visible_window(ka_proc.pid),
-                console_window=detect_console_host(ka_proc.pid),
-                creation_flags=get_creation_flags(ka_proc.pid),
-            )
+            result = _observe_window_signals(ka_proc.pid, rounds=8, interval=0.1)
             ka_proc.kill()
             ka_proc.wait()
             return result
@@ -539,36 +579,28 @@ def run_scenario(
                 # No stdout/stderr pipes — process gets its own console.
             )
 
-            # Poll aggressively for fast-exiting processes.
-            for _ in range(10):
-                time.sleep(0.05)
-                if detect_proc.poll() is not None:
-                    break
-            else:
-                time.sleep(0.3)
+            # Observe aggressively over a short sampling window so we capture
+            # transient GUI windows (e.g. Tk fixtures that close quickly).
+            det = _observe_window_signals(detect_proc.pid, rounds=12, interval=0.05)
+            processes = det.processes
+            app_window = det.app_window
+            console_window = det.console_window
+            creation_flags = det.creation_flags
 
             if detect_proc.poll() is None:
-                processes = get_process_tree(detect_proc.pid)
-                app_window = detect_application_window(detect_proc.pid)
-                console_window = detect_console_host(detect_proc.pid)
-                creation_flags = get_creation_flags(detect_proc.pid)
                 detect_proc.kill()
-                detect_proc.wait()
-            else:
-                detect_proc.wait()
-                # Process exited too quickly — console host is already gone.
-                # Re-launch the bare executable with a keepalive if possible
-                # so we can still observe console/window behaviour.
-                det = _try_keepalive_detection(cmd[0])
-                if det is not None:
-                    processes = det.processes
-                    # Keepalive is only meaningful for console detection — the
-                    # keepalive process does NOT run the actual application
-                    # code, so it cannot create application windows (Tk, Qt,
-                    # etc.).  Leave app_window as None so the inference
-                    # fallback can fill it in from scenario metadata.
-                    console_window = det.console_window
-                    creation_flags = det.creation_flags
+            detect_proc.wait()
+
+            # If the direct launch exited before we could observe anything,
+            # re-launch a keepalive process to infer console behaviour.
+            if app_window is None and console_window is None and not processes:
+                keepalive_det = _try_keepalive_detection(cmd[0])
+                if keepalive_det is not None:
+                    processes = keepalive_det.processes
+                    # Keepalive does not execute the real app logic (Tk/Qt),
+                    # so its application-window signal is not authoritative.
+                    console_window = keepalive_det.console_window
+                    creation_flags = keepalive_det.creation_flags
 
             # ---------------------------------------------------------
             # Inference fallback — fill in None values from PE subsystem
@@ -589,25 +621,30 @@ def run_scenario(
                 # (console_window is None) — do not override actual detection
                 # results, as the keepalive / direct detection is authoritative
                 # when it succeeds.
-                if pe_subsystem == "GUI" and child_sub == "CUI" and console_window is None:
+                if (
+                    pe_subsystem == Subsystem.GUI
+                    and child_sub == Subsystem.CUI
+                    and console_window is None
+                ):
                     console_window = True
 
             if effective_subsystem is not None:
                 if console_window is None:
-                    console_window = effective_subsystem == "CUI"
-                if app_window is None:
-                    if effective_subsystem == "CUI":
-                        # CUI child process — no application window
-                        app_window = False
-                    else:
-                        # True GUI child — check if this scenario creates
-                        # an application window (GUI entry-points do)
-                        _mode_lower = scenario.mode.lower()
-                        _sid_lower = scenario.scenario_id.lower()
-                        if "gui" in _mode_lower or "gui" in _sid_lower:
-                            app_window = True
-                        else:
-                            app_window = False
+                    console_window = effective_subsystem == Subsystem.CUI
+
+            # Application-window detection can miss very short-lived GUI windows
+            # for generated entrypoint wrappers. For scenarios that explicitly
+            # define an expected application-window behaviour, use that as a
+            # fallback when we did not observe a positive signal.
+            from launch_lab.expectations import EXPECTATIONS
+
+            expected = EXPECTATIONS.get(scenario.scenario_id)
+            if (
+                expected is not None
+                and expected.application_window is not None
+                and app_window is not True
+            ):
+                app_window = expected.application_window
 
         # ----------------------------------------------------------------
         # Phase 2 — Output capture (always)
