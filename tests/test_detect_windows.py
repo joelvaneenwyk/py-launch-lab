@@ -188,7 +188,3 @@ class TestDetectApplicationWindow:
 
         with patch.object(dw, "_IS_WINDOWS", False):
             assert detect_application_window(1) is None
-
-    @pytest.mark.skipif(sys.platform == "win32", reason="Non-Windows test only")
-    def test_non_windows_returns_none(self):
-        assert detect_application_window(1) is None
