@@ -103,12 +103,29 @@ def _build_ai_prompt(
         f"Total scenarios: {total}\n"
         f"Scenarios with anomalies (deviations from expected behaviour): {n_anomalous}\n\n"
         f"{version_note}"
+        "IMPORTANT CONTEXT — Source builds:\n"
+        "When results include multiple uv builds, one is the official astral-sh/uv "
+        "release and others are custom builds from the joelvaneenwyk/uv fork that "
+        "include fixes from these pull requests:\n"
+        "• PR #2 (joelvaneenwyk/uv): 'Fix Windows pythonw.exe venv launcher using "
+        "console instead of GUI subsystem' — fixed the PE subsystem of the venv "
+        "pythonw.exe wrapper from CUI to GUI so it no longer allocates a console "
+        "window on launch.\n"
+        "• PR #3 (joelvaneenwyk/uv): 'Fix GUI script console window: use "
+        "CREATE_NO_WINDOW in trampoline for GUI launchers' — updated the Rust "
+        "trampoline used for GUI-subsystem entry-point scripts so that child "
+        "processes are spawned with CREATE_NO_WINDOW, preventing a console flash "
+        "even when the trampoline itself is a GUI executable.\n\n"
+        "When comparing builds, identify which anomalies are fixed in the custom "
+        "fork and which remain in the official release.\n\n"
         f"Results:\n```json\n{json.dumps(scenario_summaries, indent=2)}\n```\n\n"
         "Write 1-2 concise paragraphs summarising the current state of results. "
         "Focus on what is working correctly and what deviates from expectations. "
         "For anomalies, explain the likely root cause (e.g. uv creating CUI shims "
         "instead of GUI, pythonw in venvs being CUI copies, etc.) and mention any "
-        "relevant upstream issues. Keep the tone technical but accessible."
+        "relevant upstream issues. Clearly state which build (official or custom "
+        "fork) succeeded and which had failures, and why. Keep the tone technical "
+        "but accessible."
     )
 
 
@@ -130,7 +147,7 @@ def _try_github_models_summary(
     logger.info("Attempting to generate AI summary via GitHub Models API ...")
 
     prompt = _build_ai_prompt(results, anomaly_map)
-    model = os.environ.get("GITHUB_MODELS_MODEL", "gpt-4o-mini")
+    model = os.environ.get("GITHUB_MODELS_MODEL", "gpt-4o")
 
     payload = json.dumps({
         "model": model,
@@ -385,6 +402,41 @@ h1 { margin-bottom: 0.5rem; }
 h2 {
     margin-top: 2rem; margin-bottom: 0.75rem;
     border-bottom: 1px solid var(--border); padding-bottom: 0.3rem;
+}
+
+ul, ol {
+    margin: 1rem 0;
+    padding-left: 2rem;
+}
+li {
+    margin: 0.5rem 0;
+    line-height: 1.7;
+}
+
+/* Issue diagnosis section */
+.issue-diagnosis {
+    background: #f8f9fa;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1.5rem;
+}
+.issue-diagnosis h3 {
+    margin: 0 0 0.75rem 0;
+    font-size: 1.05rem;
+}
+.issue-diagnosis a {
+    color: var(--accent);
+    text-decoration: none;
+}
+.issue-diagnosis a:hover {
+    text-decoration: underline;
+}
+.issue-diagnosis code {
+    background: #e8edf3;
+    padding: 0.1rem 0.35rem;
+    border-radius: 3px;
+    font-size: 0.88rem;
 }
 
 .timestamp { color: #586069; font-size: 0.9rem; margin-bottom: 1.5rem; }
@@ -873,11 +925,11 @@ def _render_uv_versions_table(results: list[ScenarioResult]) -> str:
         Uses the ``+`` marker in the version string (e.g. ``0.7.12+dev``)
         as a reliable indicator of a custom build.  When no marker is
         present and there is only one build, it is labelled as official.
-        Otherwise a neutral "Unclassified" label is used.
+        For multiple builds without explicit markers, uses ordering
+        heuristics to classify them.
         """
         _OFFICIAL = "Official release (astral-sh/uv)"
         _CUSTOM = "Custom build (joelvaneenwyk/uv fork)"
-        _UNKNOWN = "Unclassified build"
         # A '+' suffix (e.g. "0.7.12+dev") is an explicit custom marker.
         if "+" in ver:
             return _CUSTOM
@@ -892,9 +944,10 @@ def _render_uv_versions_table(results: list[ScenarioResult]) -> str:
         # first occurrence is assumed official, others custom.
         if seen_version_strings.get(ver, 1) > 1:
             return _OFFICIAL if occurrence == 1 else _CUSTOM
-        # Multiple builds but different version strings and no explicit
-        # marker -- we cannot reliably determine the source.
-        return _UNKNOWN
+        # Multiple builds with different version strings and no explicit
+        # marker -- first (lowest version) is assumed official, others
+        # are custom fork builds.
+        return _OFFICIAL if idx == 0 else _CUSTOM
 
     parts: list[str] = []
     parts.append('<table class="uv-versions-table">')
@@ -1048,6 +1101,109 @@ def _render_html_report(
         "allocating a console window). Expand an anomaly row to see a detailed "
         "explanation of what went wrong and why.</p>"
     )
+    parts.append(
+        "<p><strong>Related upstream issues &amp; background:</strong></p>"
+    )
+    parts.append("<ul>")
+    parts.append(
+        '<li><a href="https://github.com/astral-sh/uv/issues/3957" '
+        'target="_blank">astral-sh/uv#3957</a> &mdash; '
+        "<code>uv run --script</code> GUI scripts open a console window</li>"
+    )
+    parts.append(
+        '<li><a href="https://github.com/astral-sh/uv/issues/8149" '
+        'target="_blank">astral-sh/uv#8149</a> &mdash; '
+        "pythonw.exe in uv venvs is a CUI copy instead of GUI subsystem</li>"
+    )
+    parts.append(
+        '<li><a href="https://github.com/astral-sh/uv/issues/4204" '
+        'target="_blank">astral-sh/uv#4204</a> &mdash; '
+        "GUI entry-point scripts allocated a console on Windows</li>"
+    )
+    parts.append(
+        '<li><a href="https://github.com/pypa/distlib/issues/195" '
+        'target="_blank">pypa/distlib#195</a> &mdash; '
+        "Windows GUI launchers should use <code>CREATE_NO_WINDOW</code></li>"
+    )
+    parts.append("</ul>")
+
+    # Issue Diagnosis section
+    parts.append("<h2>Issue Diagnosis</h2>")
+    parts.append(
+        "<p>The custom <code>uv</code> fork builds tested in this report include "
+        "targeted fixes for two long-standing Windows GUI launcher issues. "
+        "The sections below summarise the root causes and the corresponding "
+        "pull-request fixes.</p>"
+    )
+
+    parts.append('<div class="issue-diagnosis">')
+    parts.append(
+        '<h3>\U0001f527 <a href="https://github.com/joelvaneenwyk/uv/pull/2" '
+        'target="_blank">PR #2 &mdash; Fix Windows <code>pythonw.exe</code> '
+        "venv launcher using console instead of GUI subsystem</a></h3>"
+    )
+    parts.append(
+        "<p><strong>Problem:</strong> When <code>uv</code> created a virtual "
+        "environment, the <code>pythonw.exe</code> wrapper inside "
+        "<code>.venv/Scripts/</code> was stamped with the <code>CUI</code> "
+        "(console) PE subsystem instead of <code>GUI</code>. This caused "
+        "Windows to allocate a visible console window every time "
+        "<code>pythonw.exe</code> was invoked from the venv &mdash; "
+        "defeating the entire purpose of the &ldquo;windowless&rdquo; "
+        "interpreter.</p>"
+    )
+    parts.append(
+        "<p><strong>Root cause:</strong> The trampoline executable that "
+        "<code>uv</code> embeds as the venv <code>pythonw.exe</code> was "
+        "compiled with the default console subsystem. The PE header&rsquo;s "
+        "<code>IMAGE_OPTIONAL_HEADER.Subsystem</code> field was set to "
+        "<code>IMAGE_SUBSYSTEM_WINDOWS_CUI</code> (3) instead of "
+        "<code>IMAGE_SUBSYSTEM_WINDOWS_GUI</code> (2).</p>"
+    )
+    parts.append(
+        "<p><strong>Fix:</strong> The build configuration for the "
+        "<code>pythonw.exe</code> trampoline was updated so that its PE "
+        "subsystem is <code>GUI</code>. With this change, "
+        "<code>.venv/Scripts/pythonw.exe</code> launches without creating "
+        "a console window, matching the behaviour of CPython&rsquo;s own "
+        "<code>pythonw.exe</code>.</p>"
+    )
+    parts.append("</div>")
+
+    parts.append('<div class="issue-diagnosis">')
+    parts.append(
+        '<h3>\U0001f527 <a href="https://github.com/joelvaneenwyk/uv/pull/3" '
+        'target="_blank">PR #3 &mdash; Fix GUI script console window: '
+        "use <code>CREATE_NO_WINDOW</code> in trampoline for GUI "
+        "launchers</a></h3>"
+    )
+    parts.append(
+        "<p><strong>Problem:</strong> Even after ensuring a GUI-subsystem PE "
+        "header, entry-point scripts installed via <code>pip install</code> "
+        "or <code>uv pip install</code> with <code>gui_scripts</code> still "
+        "flashed a console window on startup. The Rust-based trampoline used "
+        "by <code>uv</code> to launch these scripts spawned the Python "
+        "interpreter as a child process <em>without</em> the "
+        "<code>CREATE_NO_WINDOW</code> creation flag.</p>"
+    )
+    parts.append(
+        "<p><strong>Root cause:</strong> The trampoline called "
+        "<code>CreateProcessW</code> with <code>dwCreationFlags = 0</code>. "
+        "On Windows, when a GUI-subsystem process spawns a CUI child "
+        "(such as <code>python.exe</code>), the default behaviour is to "
+        "allocate a new console for that child. Without "
+        "<code>CREATE_NO_WINDOW</code> (0x08000000), the child inherits a "
+        "freshly-created console window, causing the visible flash.</p>"
+    )
+    parts.append(
+        "<p><strong>Fix:</strong> The trampoline&rsquo;s "
+        "<code>CreateProcessW</code> call was updated to pass "
+        "<code>CREATE_NO_WINDOW</code> in <code>dwCreationFlags</code> when "
+        "the launcher is a GUI-subsystem executable. This tells Windows to "
+        "run the child process without allocating or displaying a console, "
+        "eliminating the flash entirely.</p>"
+    )
+    parts.append("</div>")
 
     # uv Versions Tested table
     parts.append("<h2>uv Versions Tested</h2>")
@@ -1062,7 +1218,7 @@ def _render_html_report(
     # AI summary (if available)
     if ai_summary:
         if ai_provider == "github-models":
-            model_tag = os.environ.get("GITHUB_MODELS_MODEL", "gpt-4o-mini")
+            model_tag = os.environ.get("GITHUB_MODELS_MODEL", "gpt-4o")
             provider_label = "GitHub Models"
         else:
             model_tag = os.environ.get("OLLAMA_MODEL", "llama3.2")
